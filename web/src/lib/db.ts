@@ -9,18 +9,17 @@ export function getDb(): any {
     path.resolve(process.cwd(), "src/data/tenderhub.sqlite"),
     path.resolve(process.cwd(), "../apps/api/writable/tenderhub.sqlite"),
     path.resolve(process.cwd(), "apps/api/writable/tenderhub.sqlite"),
-    "E:/tender/apps/api/writable/tenderhub.sqlite",
   ];
   for (const p of dbPaths) {
-    if (fs.existsSync(/*turbopackIgnore: true*/ p)) {
-      try {
+    try {
+      if (fs.existsSync(/*turbopackIgnore: true*/ p)) {
         // @ts-ignore
         const { DatabaseSync } = require("node:sqlite");
         dbInstance = new DatabaseSync(p);
         return dbInstance;
-      } catch (e) {
-        // Turbopack bundling fallback
       }
+    } catch {
+      // Fallback
     }
   }
   return null;

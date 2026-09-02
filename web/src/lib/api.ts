@@ -15,7 +15,7 @@ export async function apiFetch<T = any>(
   if (init.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
 
   try {
-    const res = await fetch(`${API_BASE}${path}`, { ...init, headers, cache: "no-store" });
+    const res = await fetch(`${API_BASE}${path}`, { ...init, headers, cache: "no-store", signal: AbortSignal.timeout(800) });
     const text = await res.text();
     let body: any;
     try { body = JSON.parse(text); } catch { body = { reason: "bad_gateway", detail: text.slice(0, 200) }; }

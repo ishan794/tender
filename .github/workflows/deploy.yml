@@ -29,7 +29,10 @@ jobs:
         run: npm run test:phases --workspace=web
 
       - name: Build Next.js 16 Web application
-        run: npm run build --workspace=web
+        run: cd web && npm run build
+        env:
+          NODE_OPTIONS: "--max-old-space-size=4096"
+          NEXT_TELEMETRY_DISABLED: 1
 
   # 2. Production Docker Build Check
   docker-build-verification:
