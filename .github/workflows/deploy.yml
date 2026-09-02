@@ -26,7 +26,7 @@ jobs:
         run: npm ci
 
       - name: Run verification test suite
-        run: cd web && npx tsx scripts/verify-all-phases.mjs
+        run: npm run test:phases --workspace=web
 
       - name: Build Next.js 16 Web application
         run: npm run build --workspace=web
