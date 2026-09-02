@@ -10,29 +10,26 @@ jobs:
   # 1. Test & Build Frontend
   test-and-build-frontend:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ./web
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Node.js 20
+      - name: Setup Node.js 22
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: 'npm'
-          cache-dependency-path: './web/package-lock.json'
+          cache-dependency-path: './package-lock.json'
 
       - name: Install dependencies
         run: npm ci
 
       - name: Run verification test suite
-        run: npx tsx scripts/verify-all-phases.mjs
+        run: cd web && npx tsx scripts/verify-all-phases.mjs
 
       - name: Build Next.js 16 Web application
-        run: npm run build
+        run: npm run build --workspace=web
 
   # 2. Production Docker Build Check
   docker-build-verification:
