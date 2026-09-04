@@ -163,6 +163,8 @@ let child = null;
 async function main() {
   if (OWN_SERVER) {
     child = spawn("npx", ["next", "start", "-p", String(PORT)], {
+      cwd: new URL("..", import.meta.url),
+      shell: true,
       env: {
         ...process.env,
         AUTH_JWT_SECRET: SECRET,

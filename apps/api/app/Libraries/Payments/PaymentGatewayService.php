@@ -14,8 +14,11 @@ class PaymentGatewayService
      */
     public static function createPayHereCheckout(array $data): array
     {
-        $merchantId     = getenv('PAYHERE_MERCHANT_ID') ?: '1211149'; // Default Sandbox Merchant ID
-        $merchantSecret = getenv('PAYHERE_MERCHANT_SECRET') ?: '4Xy78z9Q0r1S2t3U4v5W6x';
+        $merchantId     = (string) (getenv('PAYHERE_MERCHANT_ID') ?: '');
+        $merchantSecret = (string) (getenv('PAYHERE_MERCHANT_SECRET') ?: '');
+        if ($merchantId === '' || $merchantSecret === '') {
+            throw new \RuntimeException('PayHere configuration missing: PAYHERE_MERCHANT_ID and PAYHERE_MERCHANT_SECRET must be set in environment.');
+        }
         $isSandbox      = (getenv('PAYHERE_MODE') ?: 'sandbox') === 'sandbox';
 
         $orderId   = $data['order_id'];
@@ -65,8 +68,16 @@ class PaymentGatewayService
      */
     public static function verifyPayHereWebhook(array $post): bool
     {
-        $merchantId     = getenv('PAYHERE_MERCHANT_ID') ?: '1211149';
-        $merchantSecret = getenv('PAYHERE_MERCHANT_SECRET') ?: '4Xy78z9Q0r1S2t3U4v5W6x';
+        $merchantId     = (string) (getenv('PAYHERE_MERCHANT_ID') ?: '');
+        $merchantSecret = (string) (getenv('PAYHERE_MERCHANT_SECRET') ?: '');
+        if ($merchantId === '' || $merchantSecret === '') {
+            return false; // Fail-closed when PayHere secret is not configured
+        }
+
+        // Validate merchant_id matches environment configuration if supplied
+        if (isset($post['merchant_id']) && (string) $post['merchant_id'] !== $merchantId) {
+            return false;
+        }
 
         $orderId        = $post['order_id'] ?? '';
         $payhereAmount  = $post['payhere_amount'] ?? '';

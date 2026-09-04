@@ -14,10 +14,10 @@ class IngestWebhookController extends BaseApiController
      */
     public function push()
     {
-        $ingestKey = $this->request->getHeaderLine('X-Ingest-Key');
-        $expectedKey = getenv('INGEST_SECRET_KEY') ?: 'tenderhub_ingest_secret_2026';
+        $ingestKey   = trim($this->request->getHeaderLine('X-Ingest-Key'));
+        $expectedKey = (string) (getenv('INGEST_SECRET_KEY') ?: '');
 
-        if (! hash_equals($expectedKey, $ingestKey)) {
+        if ($expectedKey === '' || $ingestKey === '' || ! hash_equals($expectedKey, $ingestKey)) {
             return problem(401, 'invalid_ingest_key', 'Unauthorized ingestion agent.');
         }
 

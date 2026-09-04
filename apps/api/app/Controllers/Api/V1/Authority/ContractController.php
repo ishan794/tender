@@ -149,9 +149,10 @@ class ContractController extends WorkspaceBase
             'due_date' => $in['due_date'] ?? null, 'amount' => isset($in['amount']) ? (float) $in['amount'] : null,
             'status' => 'pending', 'created_at' => date('Y-m-d H:i:s'),
         ]);
+        $milestoneId = (int) $db->insertID();
         service('eventLedger')->record('contract', $id, 'contract.milestone_added', "Milestone: {$in['title']}");
 
-        return $this->ok(['milestone_id' => $db->insertID()], [], 201);
+        return $this->ok(['milestone_id' => $milestoneId], [], 201);
     }
 
     public function meetMilestone(int $id, int $mid): ResponseInterface
@@ -217,10 +218,11 @@ class ContractController extends WorkspaceBase
             'number' => (string) ($in['number'] ?? ('INV-' . time())), 'amount' => (float) ($in['amount'] ?? 0),
             'status' => 'submitted', 'created_at' => date('Y-m-d H:i:s'),
         ]);
+        $invoiceId = (int) $db->insertID();
         service('eventLedger')->record('contract', $id, 'contract.invoice_submitted', 'Invoice submitted', [
             'amount' => (float) ($in['amount'] ?? 0),
         ]);
 
-        return $this->ok(['invoice_id' => $db->insertID()], [], 201);
+        return $this->ok(['invoice_id' => $invoiceId], [], 201);
     }
 }

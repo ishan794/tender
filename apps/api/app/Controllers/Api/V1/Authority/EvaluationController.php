@@ -68,11 +68,16 @@ class EvaluationController extends WorkspaceBase
             return problem(409, 'already_declared', 'You have already declared on this tender.');
         }
 
+        $hasConflict = ! empty($this->body()['has_conflict']) ? 1 : 0;
         $db->table('coi_declarations')->insert([
             'procurement_id' => $id, 'user_id' => $me,
-            'has_conflict' => ! empty($this->body()['has_conflict']) ? 1 : 0,
+            'has_conflict' => $hasConflict,
             'statement' => $this->body()['statement'] ?? null,
             'created_at' => date('Y-m-d H:i:s'),
+        ]);
+
+        service('eventLedger')->record('procurement', $id, 'eval.coi_declared', 'Conflict of interest declared', [
+            'has_conflict' => $hasConflict,
         ]);
 
         return $this->ok(['declared' => true], [], 201);
@@ -166,8 +171,13 @@ class EvaluationController extends WorkspaceBase
         }
 
         // The stage only advances if something actually saved.
-        if ($saved > 0 && (int) $proc['stage_idx'] < 5) {
-            $this->advance($id, 5);
+        if ($saved > 0) {
+            if ((int) $proc['stage_idx'] < 5) {
+                $this->advance($id, 5);
+            }
+            service('eventLedger')->record('procurement', $id, 'eval.scored', 'Evaluation score(s) recorded', [
+                'saved' => $saved,
+            ]);
         }
 
         return $this->ok(['saved' => $saved, 'ignored' => $ignored], [

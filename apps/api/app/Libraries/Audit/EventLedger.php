@@ -96,6 +96,10 @@ final class EventLedger
         $rows = $this->forEntity($entityType, $entityId);
         $prev = '';
         foreach ($rows as $r) {
+            $expectedPrev = $prev !== '' ? $prev : null;
+            if ($r['prev_hash'] !== $expectedPrev) {
+                return ['ok' => false, 'count' => count($rows), 'broken_at' => (int) $r['id']];
+            }
             $expected = $this->hashOf($r, $prev);
             if (! hash_equals($expected, (string) $r['hash'])) {
                 return ['ok' => false, 'count' => count($rows), 'broken_at' => (int) $r['id']];

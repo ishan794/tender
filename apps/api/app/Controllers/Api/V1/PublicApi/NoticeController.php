@@ -68,7 +68,7 @@ class NoticeController extends BaseApiController
     public function show(string $slug)
     {
         $model  = model(NoticeModel::class);
-        $notice = $model->bySlug($slug);
+        $notice = $model->bySlug($slug) ?? (is_numeric($slug) ? $model->byId((int) $slug) : null);
 
         if (! $notice || $notice['status'] !== 'published') {
             return problem(404, 'not_found', 'No such notice.');

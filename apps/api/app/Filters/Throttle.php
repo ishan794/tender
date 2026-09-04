@@ -16,7 +16,10 @@ class Throttle implements FilterInterface
         $hits   = (int) ($cache->get($bucket) ?? 0);
 
         if ($hits >= $limit) {
-            return problem(429, 'too_many_requests', 'Too many requests. Try again shortly.');
+            $resp = problem(429, 'too_many_requests', 'Too many requests. Try again shortly.', [
+                'retry_after' => 60,
+            ]);
+            return $resp->setHeader('Retry-After', '60');
         }
 
         $cache->save($bucket, $hits + 1, 60);

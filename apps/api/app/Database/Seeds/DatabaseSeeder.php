@@ -10,11 +10,19 @@ class DatabaseSeeder extends Seeder
     {
         $db = $this->db;
 
-        foreach (['ratings','awards','eval_scores','eval_criteria','coi_declarations','addenda',
-                  'clarifications','doc_purchases','submissions','procurements','auction_lots',
-                  'notice_documents','notices','alert_profiles','bids','document_assets','payments',
-                  'invitations','refresh_tokens','users','organisations','authorities','categories',
-                  'districts','provinces','feed_sources','api_keys','webhooks'] as $t) {
+        $truncateTables = [
+            'factories','password_resets','email_verifications','debarred_suppliers','addenda','alert_profiles',
+            'api_keys','auction_lots','bid_seals','bids','clarifications','coi_declarations','complaints',
+            'contract_invoices','contract_milestones','contract_variations','contracts','data_requests',
+            'doc_purchases','document_assets','document_downloads','document_versions','eval_criteria',
+            'eval_scores','event_ledger','invitations','kyc_submissions','legal_holds','notice_documents',
+            'notification_deliveries','notifications','orders','payments','procurement_plans','ratings',
+            'awards','refresh_tokens','security_events','signatures','submissions','tco_assessments',
+            'tender_keys','procurements','notices','authorities','feed_sources','categories',
+            'users','webhook_deliveries','webhooks','organisations','districts','provinces'
+        ];
+
+        foreach ($truncateTables as $t) {
             $db->table($t)->truncate();
         }
         // Ids shift on every re-seed and that silently repointed saved profiles

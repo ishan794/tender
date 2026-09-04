@@ -10,7 +10,7 @@ $routes->get('/', static fn () => service('response')
 $routes->group('api/v1', ['namespace' => 'App\Controllers\Api\V1'], static function ($routes) {
 
     // ----------------------------------------------------------- public
-    $routes->group('', ['namespace' => 'App\Controllers\Api\V1\PublicApi'], static function ($routes) {
+    $routes->group('', ['namespace' => 'App\Controllers\Api\V1\PublicApi', 'filter' => 'throttle:60'], static function ($routes) {
         $routes->get('notices', 'NoticeController::index');
         $routes->get('notices/(:segment)', 'NoticeController::show/$1');
         $routes->get('auctions', 'AuctionController::index');
@@ -39,6 +39,7 @@ $routes->group('api/v1', ['namespace' => 'App\Controllers\Api\V1'], static funct
     // --------------------------------------------------------- payments
     $routes->group('payments', ['namespace' => 'App\Controllers\Api\V1\Payments'], static function ($routes) {
         $routes->post('checkout', 'CheckoutController::checkout', ['filter' => ['auth-jwt', 'tenant']]);
+        $routes->get('orders/(:segment)', 'CheckoutController::show/$1', ['filter' => ['auth-jwt', 'tenant']]);
         $routes->post('webhook/payhere', 'CheckoutController::webhookPayHere');
         $routes->post('refund', 'RefundController::process', ['filter' => ['auth-jwt', 'tenant', 'group:staff']]);
     });

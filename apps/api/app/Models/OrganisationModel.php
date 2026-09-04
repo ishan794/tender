@@ -6,6 +6,7 @@ use CodeIgniter\Model;
 
 class OrganisationModel extends Model
 {
+    protected $DBGroup       = 'default';
     protected $table         = 'organisations';
     protected $primaryKey    = 'id';
     protected $returnType    = 'array';

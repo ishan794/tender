@@ -3,6 +3,7 @@
 namespace App\Controllers\Api\V1\Auth;
 
 use App\Controllers\Api\V1\BaseApiController;
+use App\Libraries\Validation\IdentityValidator;
 
 class PasswordResetController extends BaseApiController
 {
@@ -13,6 +14,11 @@ class PasswordResetController extends BaseApiController
     public function forgotPassword()
     {
         $in = $this->body();
+
+        if (isset($in['email'])) {
+            $in['email'] = IdentityValidator::normalizeEmail($in['email']);
+        }
+
         $rules = [
             'email' => 'required|valid_email',
         ];
@@ -21,7 +27,7 @@ class PasswordResetController extends BaseApiController
             return problem(422, 'validation_failed', 'A valid email is required.', ['errors' => $this->validator->getErrors()]);
         }
 
-        $email = strtolower(trim($in['email']));
+        $email = $in['email'];
         $users = model('App\Models\UserModel');
         $user  = $users->where('email', $email)->first();
 
@@ -37,7 +43,7 @@ class PasswordResetController extends BaseApiController
         $tokenHash = hash('sha256', $rawToken);
         $expiresAt = date('Y-m-d H:i:s', time() + 3600); // 1 hour
 
-        $db = db_connect();
+        $db = db_connect('default');
         
         // Invalidate any previous unused tokens for this user
         $db->table('password_resets')->where('email', $email)->delete();
@@ -78,10 +84,16 @@ class PasswordResetController extends BaseApiController
             return problem(422, 'validation_failed', 'Valid token and new password (min 8 chars) required.', ['errors' => $this->validator->getErrors()]);
         }
 
+        // Password complexity check
+        $pwdCheck = IdentityValidator::validatePassword($in['password'] ?? '');
+        if (! $pwdCheck['valid']) {
+            return problem(422, 'weak_password', $pwdCheck['error']);
+        }
+
         $rawToken  = trim($in['token']);
         $tokenHash = hash('sha256', $rawToken);
 
-        $db = db_connect();
+        $db = db_connect('default');
         $record = $db->table('password_resets')
             ->where('token_hash', $tokenHash)
             ->where('expires_at >=', date('Y-m-d H:i:s'))
@@ -96,24 +108,28 @@ class PasswordResetController extends BaseApiController
         $user  = $users->where('email', $record['email'])->first();
 
         if (! $user) {
-            return problem(404, 'user_not_found', 'User account associated with this token was not found.');
+            return problem(400, 'invalid_or_expired_token', 'The password reset token is invalid or has expired.');
         }
 
-        // Update password hash and revoke token
+        // Update password hash and revoke token within safe transaction
         $db->transBegin();
+        try {
+            $users->update($user['id'], [
+                'password_hash' => password_hash($in['password'], PASSWORD_DEFAULT),
+                'updated_at'    => date('Y-m-d H:i:s'),
+            ]);
 
-        $users->update($user['id'], [
-            'password_hash' => password_hash($in['password'], PASSWORD_DEFAULT),
-            'updated_at'    => date('Y-m-d H:i:s'),
-        ]);
+            // Delete used token to prevent replay attacks
+            $db->table('password_resets')->where('email', $record['email'])->delete();
 
-        // Delete used token to prevent replay attacks
-        $db->table('password_resets')->where('email', $record['email'])->delete();
+            // Invalidate all active refresh token families for security
+            $db->table('refresh_tokens')->where('user_id', $user['id'])->delete();
 
-        // Invalidate all active refresh token families for security
-        $db->table('refresh_tokens')->where('user_id', $user['id'])->delete();
-
-        $db->transCommit();
+            $db->transCommit();
+        } catch (\Throwable $e) {
+            $db->transRollback();
+            return problem(500, 'reset_failed', 'Could not complete password reset. Please try again.');
+        }
 
         return $this->ok([
             'message' => 'Password has been successfully reset. You may now sign in with your new credentials.',

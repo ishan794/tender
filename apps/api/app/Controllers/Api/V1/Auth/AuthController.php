@@ -4,6 +4,7 @@ namespace App\Controllers\Api\V1\Auth;
 
 use App\Controllers\Api\V1\BaseApiController;
 use App\Libraries\Jwt;
+use App\Libraries\Validation\IdentityValidator;
 
 class AuthController extends BaseApiController
 {
@@ -13,6 +14,11 @@ class AuthController extends BaseApiController
     {
         $in   = $this->body();
         $kind = ($in['account_type'] ?? 'bidder') === 'company' ? 'company' : 'bidder';
+
+        // Pre-normalize email so whitespace is stripped before validation
+        if (isset($in['email'])) {
+            $in['email'] = IdentityValidator::normalizeEmail($in['email']);
+        }
 
         $rules = [
             'name'     => 'required|min_length[2]',
@@ -24,45 +30,111 @@ class AuthController extends BaseApiController
             return problem(422, 'validation_failed', 'Check the form.', ['errors' => $this->validator->getErrors()]);
         }
 
+        $email = $in['email'];
+
+        // Password complexity check
+        $pwdCheck = IdentityValidator::validatePassword($in['password'] ?? '');
+        if (! $pwdCheck['valid']) {
+            return problem(422, 'weak_password', $pwdCheck['error']);
+        }
+
+        // NIC validation if supplied
+        if (! empty($in['nic']) && ! IdentityValidator::isValidNic($in['nic'])) {
+            return problem(422, 'invalid_nic', 'Invalid Sri Lankan National Identity Card (NIC) format.');
+        }
+
+        // BRN validation and duplicate company registration check
+        $normRegNo = null;
+        if (! empty($in['reg_no'])) {
+            if (! IdentityValidator::isValidBrn($in['reg_no'])) {
+                return problem(422, 'invalid_reg_no', 'Invalid Business Registration Number (BRN) format.');
+            }
+            $normRegNo = IdentityValidator::normalizeRegNo($in['reg_no']);
+            $existingOrg = model('App\Models\OrganisationModel')->where('reg_no', $normRegNo)->first();
+            if ($existingOrg) {
+                return problem(409, 'reg_no_taken', 'An organisation with that registration number already exists.');
+            }
+        }
+
         $users = model('App\Models\UserModel');
-        if ($users->where('email', strtolower($in['email']))->first()) {
+        if ($users->where('email', $email)->first()) {
             return problem(409, 'email_taken', 'That e-mail already has an account.');
         }
 
         $orgs = model('App\Models\OrganisationModel');
-        $db   = db_connect();
+        $db   = db_connect('default');
         $db->transBegin();
 
-        $slug = url_title($in['org_name'], '-', true) . '-' . bin2hex(random_bytes(2));
-        $orgId = $orgs->insert([
-            'name' => $in['org_name'], 'slug' => $slug, 'type' => $kind,
-            // Companies are free BY DECISION, not by oversight: the publish plan
-            // has everything enabled and a price of zero. Switching pricing on
-            // is a config change, not a migration.
-            'plan' => $kind === 'company' ? 'publish' : 'free',
-            'sub_status' => $kind === 'company' ? 'active' : 'none',
-            'district_id' => $in['district_id'] ?? null,
-            'reg_no' => $in['reg_no'] ?? null,
-            'contact_email' => strtolower($in['email']),
-        ], true);
+        try {
+            $slug = url_title($in['org_name'], '-', true) . '-' . bin2hex(random_bytes(2));
+            $orgId = $orgs->insert([
+                'name'          => trim($in['org_name']),
+                'slug'          => $slug,
+                'type'          => $kind,
+                'plan'          => $kind === 'company' ? 'publish' : 'free',
+                'sub_status'    => $kind === 'company' ? 'active' : 'none',
+                'district_id'   => $in['district_id'] ?? null,
+                'reg_no'        => $normRegNo,
+                'contact_email' => $email,
+                'contact_phone' => $in['phone'] ?? null,
+                'created_at'    => date('Y-m-d H:i:s'),
+                'updated_at'    => date('Y-m-d H:i:s'),
+            ], true);
 
-        $userId = $users->insert([
-            'org_id' => $orgId, 'name' => $in['name'], 'email' => strtolower($in['email']),
-            'phone' => $in['phone'] ?? null,
-            'password_hash' => password_hash($in['password'], PASSWORD_DEFAULT),
-            'role' => 'owner', 'user_group' => $kind, 'status' => 'active',
-        ], true);
+            if (! $orgId) {
+                throw new \RuntimeException('Failed to create organisation.');
+            }
 
-        $db->transCommit();
+            $userId = $users->insert([
+                'org_id'        => $orgId,
+                'name'          => trim($in['name']),
+                'email'         => $email,
+                'phone'         => $in['phone'] ?? null,
+                'password_hash' => password_hash($in['password'], PASSWORD_DEFAULT),
+                'role'          => 'owner',
+                'user_group'    => $kind,
+                'status'        => 'active',
+                'created_at'    => date('Y-m-d H:i:s'),
+                'updated_at'    => date('Y-m-d H:i:s'),
+            ], true);
 
-        return $this->ok($this->session((int) $userId), [], 201);
+            if (! $userId) {
+                throw new \RuntimeException('Failed to create user account.');
+            }
+
+            // Generate initial email verification record
+            $rawToken  = bin2hex(random_bytes(24));
+            $tokenHash = hash('sha256', $rawToken);
+            $expiresAt = date('Y-m-d H:i:s', time() + 86400); // 24 hours
+
+            $db->table('email_verifications')->insert([
+                'email'      => $email,
+                'token_hash' => $tokenHash,
+                'expires_at' => $expiresAt,
+                'created_at' => date('Y-m-d H:i:s'),
+            ]);
+
+            $db->transCommit();
+        } catch (\Throwable $e) {
+            $db->transRollback();
+            return problem(500, 'registration_failed', 'Could not complete registration. Please try again.');
+        }
+
+        $meta = [];
+        if (ENVIRONMENT !== 'production') {
+            $meta['dev_verification_token'] = $rawToken;
+            $meta['dev_verification_url']   = 'https://tenderhub.lk/auth/verify?token=' . $rawToken;
+        }
+
+        return $this->ok($this->session((int) $userId), $meta, 201);
     }
 
     public function login()
     {
         $in = $this->body();
 
-        $user = model('App\Models\UserModel')->where('email', strtolower($in['email'] ?? ''))->first();
+        $email = IdentityValidator::normalizeEmail($in['email'] ?? '');
+        $user  = model('App\Models\UserModel')->where('email', $email)->first();
 
         // Identical error for an unknown account and a wrong password. Neither
         // is allowed to become an account-enumeration oracle.
@@ -132,7 +204,7 @@ class AuthController extends BaseApiController
     {
         $given = (string) ($this->body()['refresh_token'] ?? '');
         $hash  = hash('sha256', $given);
-        $db    = db_connect();
+        $db    = db_connect('default');
         $row   = $db->table('refresh_tokens')->where('token_hash', $hash)->get()->getFirstRow('array');
 
         if (! $row) {
@@ -159,7 +231,7 @@ class AuthController extends BaseApiController
     {
         $given = (string) ($this->body()['refresh_token'] ?? '');
         if ($given !== '') {
-            $db  = db_connect();
+            $db  = db_connect('default');
             $row = $db->table('refresh_tokens')->where('token_hash', hash('sha256', $given))->get()->getFirstRow('array');
             if ($row) {
                 $db->table('refresh_tokens')->where('family_id', $row['family_id'])
@@ -186,7 +258,7 @@ class AuthController extends BaseApiController
         ]);
 
         $refresh = bin2hex(random_bytes(32));
-        db_connect()->table('refresh_tokens')->insert([
+        db_connect('default')->table('refresh_tokens')->insert([
             'user_id'    => $user['id'],
             'family_id'  => $family ?: bin2hex(random_bytes(16)),
             'token_hash' => hash('sha256', $refresh),

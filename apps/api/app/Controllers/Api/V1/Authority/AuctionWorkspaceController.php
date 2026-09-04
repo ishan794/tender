@@ -35,6 +35,15 @@ class AuctionWorkspaceController extends WorkspaceBase
         if (! in_array($in['method'], self::METHODS, true)) {
             return problem(422, 'bad_method', 'Unknown auction method.', ['allowed' => self::METHODS]);
         }
+        if (strtotime($in['closing_at']) < time()) {
+            return problem(422, 'closing_in_past', 'The closing date must be in the future.');
+        }
+        if (isset($in['reserve']) && (float) $in['reserve'] < 0) {
+            return problem(422, 'bad_reserve', 'Reserve price cannot be negative.');
+        }
+        if (isset($in['deposit_pct']) && ((float) $in['deposit_pct'] <= 0 || (float) $in['deposit_pct'] > 100)) {
+            return problem(422, 'bad_deposit_pct', 'Deposit percentage must be between 0.01 and 100.');
+        }
 
         $db = db_connect();
         $db->transBegin();
@@ -65,6 +74,13 @@ class AuctionWorkspaceController extends WorkspaceBase
         $lotId = $db->insertID();
         $db->transCommit();
 
+        service('eventLedger')->record('auction', (int) $lotId, 'auction.created', "Auction lot created: {$in['title']}", [
+            'notice_id'   => (int) $noticeId,
+            'asset_class' => $in['asset_class'],
+            'method'      => $in['method'],
+            'reserve'     => isset($in['reserve']) ? (float) $in['reserve'] : null,
+        ]);
+
         return $this->ok(['id' => (int) $lotId, 'notice_id' => (int) $noticeId], [], 201);
     }
 
@@ -72,12 +88,15 @@ class AuctionWorkspaceController extends WorkspaceBase
     {
         $db  = db_connect();
         $lot = $db->table('auction_lots')
-            ->select('auction_lots.*, notices.org_id, notices.closing_at')
+            ->select('auction_lots.*, notices.org_id, notices.closing_at, notices.status')
             ->join('notices', 'notices.id = auction_lots.notice_id')
             ->where('auction_lots.id', $lotId)->get()->getFirstRow('array');
 
         if (! $lot || (int) $lot['org_id'] !== (int) $this->request->orgId) {
             return problem(404, 'not_found', 'No such lot.');
+        }
+        if (($lot['status'] ?? '') === 'published') {
+            return problem(409, 'already_published', 'This auction is already published.');
         }
         if (! $lot['closing_at']) {
             return problem(409, 'no_closing_date', 'An auction cannot be published without a date.');
@@ -85,6 +104,10 @@ class AuctionWorkspaceController extends WorkspaceBase
 
         $db->table('notices')->where('id', $lot['notice_id'])
             ->update(['status' => 'published', 'published_at' => date('Y-m-d H:i:s')]);
+
+        service('eventLedger')->record('auction', (int) $lotId, 'auction.published', 'Auction lot published', [
+            'notice_id' => (int) $lot['notice_id'],
+        ]);
 
         return $this->ok(['published' => true]);
     }
@@ -95,12 +118,18 @@ class AuctionWorkspaceController extends WorkspaceBase
     {
         $db  = db_connect();
         $lot = $db->table('auction_lots')
-            ->select('auction_lots.*, notices.org_id')
+            ->select('auction_lots.*, notices.org_id, notices.status')
             ->join('notices', 'notices.id = auction_lots.notice_id')
             ->where('auction_lots.id', $lotId)->get()->getFirstRow('array');
 
         if (! $lot || (int) $lot['org_id'] !== (int) $this->request->orgId) {
             return problem(404, 'not_found', 'No such lot.');
+        }
+        if (($lot['status'] ?? '') !== 'published') {
+            return problem(409, 'not_published', 'Cannot record a result on an unpublished auction.');
+        }
+        if (($lot['result'] ?? '') === 'sold') {
+            return problem(409, 'already_sold', 'This lot has already been recorded as sold.');
         }
 
         $in     = $this->body();
@@ -125,6 +154,11 @@ class AuctionWorkspaceController extends WorkspaceBase
         $db->table('auction_lots')->where('id', $lotId)->update([
             'result' => $result, 'hammer_price' => $hammer,
             'result_note' => $in['result_note'] ?? null, 'updated_at' => date('Y-m-d H:i:s'),
+        ]);
+
+        service('eventLedger')->record('auction', (int) $lotId, 'auction.result_recorded', "Auction result recorded: {$result}", [
+            'result'       => $result,
+            'hammer_price' => $hammer,
         ]);
 
         return $this->ok(['result' => $result, 'hammer_price' => $hammer]);

@@ -3,6 +3,7 @@
 namespace App\Controllers\Api\V1\Auth;
 
 use App\Controllers\Api\V1\BaseApiController;
+use App\Libraries\Validation\IdentityValidator;
 
 class EmailVerificationController extends BaseApiController
 {
@@ -24,7 +25,7 @@ class EmailVerificationController extends BaseApiController
         $rawToken  = trim($in['token']);
         $tokenHash = hash('sha256', $rawToken);
 
-        $db = db_connect();
+        $db = db_connect('default');
         $record = $db->table('email_verifications')
             ->where('token_hash', $tokenHash)
             ->where('expires_at >=', date('Y-m-d H:i:s'))
@@ -45,7 +46,7 @@ class EmailVerificationController extends BaseApiController
             ]);
         }
 
-        // Clean up token
+        // Clean up token (single-use guarantee)
         $db->table('email_verifications')->where('email', $record['email'])->delete();
 
         return $this->ok([
@@ -61,6 +62,11 @@ class EmailVerificationController extends BaseApiController
     public function resend()
     {
         $in = $this->body();
+
+        if (isset($in['email'])) {
+            $in['email'] = IdentityValidator::normalizeEmail($in['email']);
+        }
+
         $rules = [
             'email' => 'required|valid_email',
         ];
@@ -69,7 +75,7 @@ class EmailVerificationController extends BaseApiController
             return problem(422, 'validation_failed', 'A valid email is required.', ['errors' => $this->validator->getErrors()]);
         }
 
-        $email = strtolower(trim($in['email']));
+        $email = $in['email'];
         $users = model('App\Models\UserModel');
         $user  = $users->where('email', $email)->first();
 
@@ -87,7 +93,7 @@ class EmailVerificationController extends BaseApiController
         $tokenHash = hash('sha256', $rawToken);
         $expiresAt = date('Y-m-d H:i:s', time() + 86400); // 24 hours
 
-        $db = db_connect();
+        $db = db_connect('default');
         $db->table('email_verifications')->where('email', $email)->delete();
         $db->table('email_verifications')->insert([
             'email'      => $email,

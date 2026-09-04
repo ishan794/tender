@@ -24,6 +24,19 @@ abstract class BaseApiController extends Controller
     }
 
     /**
+     * Override validateData to reset the shared validator service before each run,
+     * preventing error state leakage across multiple requests in the same process.
+     */
+    protected function validateData(array $data, $rules, array $messages = [], ?string $dbGroup = null): bool
+    {
+        $this->validator = service('validation');
+        $this->validator->reset();
+        $this->validator->setRules($rules, $messages);
+
+        return $this->validator->run($data, null, $dbGroup);
+    }
+
+    /**
      * Repeated query parameters.
      *
      * PHP collapses ?district=1&district=2 to the LAST value unless the key is
