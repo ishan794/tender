@@ -84,9 +84,17 @@ export async function NoticeDetail({ slug, kind }: { slug: string; kind: "tender
               <StatusBadge status={n.status} />
               {n.is_native ? <Badge tone="brand">Published on TenderHub</Badge> : null}
               <Badge>{titleCase(n.sector)}</Badge>
+              {n.title_si ? <Badge tone="neutral">සිංහල</Badge> : null}
+              {n.title_ta ? <Badge tone="neutral">தமிழ்</Badge> : null}
               <span className="font-mono text-[11px] text-ink-400">{n.reference}</span>
             </div>
             <h1 className="mt-2.5 text-[26px] font-semibold leading-tight tracking-tight text-ink-900">{n.title}</h1>
+            {n.title_si && n.title_si !== n.title ? (
+              <p className="mt-1 text-[15px] font-medium text-ink-700">{n.title_si}</p>
+            ) : null}
+            {n.title_ta && n.title_ta !== n.title ? (
+              <p className="mt-1 text-[15px] font-medium text-ink-700">{n.title_ta}</p>
+            ) : null}
             {n.buyer ? <p className="mt-2 text-[14px] text-ink-600">{n.buyer}</p> : null}
           </div>
 

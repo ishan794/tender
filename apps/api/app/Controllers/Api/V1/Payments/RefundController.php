@@ -50,6 +50,13 @@ class RefundController extends BaseApiController
 
         $db->transCommit();
 
+        service('eventLedger')->record('order', (int) $order['id'], 'order.refunded', "Order {$in['order_id']} refunded: {$in['reason']}", [
+            'order_id' => $in['order_id'],
+            'amount'   => $order['amount'],
+            'org_id'   => $order['org_id'],
+            'reason'   => $in['reason'],
+        ]);
+
         return $this->ok([
             'refunded'   => true,
             'order_id'   => $in['order_id'],

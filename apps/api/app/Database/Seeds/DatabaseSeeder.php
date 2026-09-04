@@ -8,6 +8,10 @@ class DatabaseSeeder extends Seeder
 {
     public function run(): void
     {
+        if (defined('CI_ENVIRONMENT') && CI_ENVIRONMENT === 'production') {
+            throw new \RuntimeException('SAFETY VIOLATION: DatabaseSeeder cannot be executed in production environment. Truncation and development seed credentials are prohibited.');
+        }
+
         $db = $this->db;
 
         $truncateTables = [
@@ -205,6 +209,7 @@ class DatabaseSeeder extends Seeder
             'created_at' => $now('-30 hours'), 'updated_at' => $now('-30 hours'),
         ]);
 
+        $this->call(MultilingualReferenceSeeder::class);
         $this->call(CatalogueSeeder::class);
         $this->call(ProcurementSeeder::class);
     }

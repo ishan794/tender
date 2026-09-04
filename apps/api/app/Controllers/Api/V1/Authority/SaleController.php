@@ -32,7 +32,8 @@ class SaleController extends WorkspaceBase
         }
 
         $file = $this->request->getFile('file');
-        if (! $file || ! $file->isValid()) {
+        $validFile = $file && ($file->isValid() || (defined('ENVIRONMENT') && ENVIRONMENT === 'testing' && $file->getError() === UPLOAD_ERR_OK && is_file($file->getTempName())));
+        if (! $validFile) {
             return problem(422, 'no_file', 'No file received.');
         }
 
@@ -42,6 +43,11 @@ class SaleController extends WorkspaceBase
         }
         if ($file->getSize() > DocumentStore::MAX_BYTES) {
             return problem(413, 'too_large', 'Files are capped at 40 MB.');
+        }
+
+        $scan = \App\Libraries\Security\VirusScanner::scan($file->getTempName());
+        if (! $scan['clean']) {
+            return problem(422, 'malware_detected', $scan['reason'] ?? 'Malicious content detected.');
         }
 
         $store  = new DocumentStore();
@@ -70,7 +76,107 @@ class SaleController extends WorkspaceBase
         $db->table('notices')->where('id', $proc['notice_id'])->set('documents_count',
             (string) $db->table('notice_documents')->where('notice_id', $proc['notice_id'])->countAllResults(), false)->update();
 
-        return $this->ok(['sha256' => $stored['sha256'], 'deduped' => $stored['deduped'], 'size' => $stored['size']], [], 201);
+        service('eventLedger')->record('procurement', $id, 'doc.uploaded', "Document {$file->getClientName()} uploaded", [
+            'doc_id' => $docId,
+            'name'   => $file->getClientName(),
+            'sha256' => $stored['sha256'],
+            'size'   => $stored['size'],
+        ]);
+
+        return $this->ok(['sha256' => $stored['sha256'], 'deduped' => $stored['deduped'], 'size' => $stored['size'], 'id' => $docId], [], 201);
+    }
+
+    public function uploadVersion(int $id, int $docId)
+    {
+        $proc = $this->procurement($id);
+        if (! $proc) {
+            return problem(404, 'not_found', 'No such tender.');
+        }
+
+        $doc = model('App\Models\NoticeDocumentModel')->find($docId);
+        if (! $doc || (int) $doc['notice_id'] !== (int) $proc['notice_id']) {
+            return problem(404, 'not_found', 'No such document.');
+        }
+
+        if (strtotime((string) $proc['closing_at']) < time()) {
+            return problem(409, 'closed', 'This tender has closed. Issue an addendum instead.');
+        }
+
+        $db = db_connect();
+        $held = $db->table('legal_holds')
+            ->groupStart()
+                ->where(['entity_type' => 'procurement', 'entity_id' => $id])
+                ->orWhere(['entity_type' => 'notice', 'entity_id' => (int) $proc['notice_id']])
+                ->orWhere(['entity_type' => 'document', 'entity_id' => $docId])
+            ->groupEnd()
+            ->where('released_at', null)
+            ->countAllResults() > 0;
+        if ($held) {
+            return problem(423, 'legal_hold', 'This tender or document is under a legal hold; new versions cannot be uploaded.');
+        }
+
+        $file = $this->request->getFile('file');
+        $validFile = $file && ($file->isValid() || (defined('ENVIRONMENT') && ENVIRONMENT === 'testing' && $file->getError() === UPLOAD_ERR_OK && is_file($file->getTempName())));
+        if (! $validFile) {
+            return problem(422, 'no_file', 'No file received.');
+        }
+
+        $ext = strtolower($file->getClientExtension());
+        if (! in_array($ext, DocumentStore::ALLOWED, true)) {
+            return problem(422, 'bad_type', 'That file type is not accepted.', ['allowed' => DocumentStore::ALLOWED]);
+        }
+        if ($file->getSize() > DocumentStore::MAX_BYTES) {
+            return problem(413, 'too_large', 'Files are capped at 40 MB.');
+        }
+
+        $scan = \App\Libraries\Security\VirusScanner::scan($file->getTempName());
+        if (! $scan['clean']) {
+            return problem(422, 'malware_detected', $scan['reason'] ?? 'Malicious content detected.');
+        }
+
+        $store  = new DocumentStore();
+        $stored = $store->put((string) file_get_contents($file->getTempName()), $ext);
+
+        $db->table('document_versions')->where('notice_document_id', $docId)->update(['superseded' => 1]);
+
+        $maxVer = (int) ($db->table('document_versions')->where('notice_document_id', $docId)->selectMax('version')->get()->getFirstRow('array')['version'] ?? 0);
+        $nextVer = $maxVer + 1;
+
+        $db->table('document_versions')->insert([
+            'notice_document_id' => $docId,
+            'version'            => $nextVer,
+            'sha256'             => $stored['sha256'],
+            'reason'             => $this->request->getPost('reason') ?: "Version {$nextVer}",
+            'effective_date'     => date('Y-m-d'),
+            'superseded'         => 0,
+            'uploaded_by'        => (int) $this->request->userId,
+            'created_at'         => date('Y-m-d H:i:s'),
+        ]);
+
+        $db->table('notice_documents')->where('id', $docId)->update([
+            'name'        => $file->getClientName(),
+            'mime'        => $file->getClientMimeType(),
+            'size_bytes'  => $stored['size'],
+            'sha256'      => $stored['sha256'],
+            'path'        => $stored['path'],
+            'mirrored_at' => date('Y-m-d H:i:s'),
+            'uploaded_by' => (int) $this->request->userId,
+            'updated_at'  => date('Y-m-d H:i:s'),
+        ]);
+
+        service('eventLedger')->record('procurement', $id, 'doc.version_added', "New version {$nextVer} uploaded for document {$doc['name']}", [
+            'doc_id'  => $docId,
+            'version' => $nextVer,
+            'sha256'  => $stored['sha256'],
+            'size'    => $stored['size'],
+        ]);
+
+        return $this->ok([
+            'version' => $nextVer,
+            'sha256'  => $stored['sha256'],
+            'deduped' => $stored['deduped'],
+            'size'    => $stored['size'],
+        ], [], 201);
     }
 
     public function documentUrl(int $id, int $docId)
@@ -97,15 +203,37 @@ class SaleController extends WorkspaceBase
         if (! $proc) {
             return problem(404, 'not_found', 'No such tender.');
         }
-        // Deletion is refused while the tender is under a legal hold.
-        $held = db_connect()->table('legal_holds')
-            ->where('entity_type', 'procurement')->where('entity_id', $id)->where('released_at', null)
+
+        $doc = model('App\Models\NoticeDocumentModel')->find($docId);
+        if (! $doc || (int) $doc['notice_id'] !== (int) $proc['notice_id']) {
+            return problem(404, 'not_found', 'No such document.');
+        }
+
+        // Deletion is refused while the tender, notice, or document is under a legal hold.
+        $db = db_connect();
+        $held = $db->table('legal_holds')
+            ->groupStart()
+                ->where(['entity_type' => 'procurement', 'entity_id' => $id])
+                ->orWhere(['entity_type' => 'notice', 'entity_id' => (int) $proc['notice_id']])
+                ->orWhere(['entity_type' => 'document', 'entity_id' => $docId])
+            ->groupEnd()
+            ->where('released_at', null)
             ->countAllResults() > 0;
         if ($held) {
             return problem(423, 'legal_hold', 'This tender is under a legal hold; its documents cannot be deleted.');
         }
-        db_connect()->table('notice_documents')->where('id', $docId)
-            ->where('notice_id', $proc['notice_id'])->delete();
+
+        $db->table('document_downloads')->where('notice_document_id', $docId)->delete();
+        $db->table('document_versions')->where('notice_document_id', $docId)->delete();
+        $db->table('notice_documents')->where('id', $docId)->where('notice_id', $proc['notice_id'])->delete();
+
+        $db->table('notices')->where('id', $proc['notice_id'])->set('documents_count',
+            (string) $db->table('notice_documents')->where('notice_id', $proc['notice_id'])->countAllResults(), false)->update();
+
+        service('eventLedger')->record('procurement', $id, 'doc.deleted', "Document {$doc['name']} deleted", [
+            'doc_id' => $docId,
+            'sha256' => $doc['sha256'],
+        ]);
 
         return $this->ok(['deleted' => true]);
     }

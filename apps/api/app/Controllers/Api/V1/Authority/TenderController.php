@@ -72,12 +72,30 @@ class TenderController extends WorkspaceBase
         $db = db_connect();
         $db->transBegin();
 
+        $utf8Validate = static function (?string $v, int $max): bool {
+            if ($v === null || $v === '') {
+                return true;
+            }
+            return mb_check_encoding($v, 'UTF-8') && mb_strlen($v) <= $max;
+        };
+
+        if (! $utf8Validate($in['title_si'] ?? null, 255) || ! $utf8Validate($in['title_ta'] ?? null, 255)) {
+            return problem(422, 'validation_failed', 'Multilingual titles must be valid UTF-8 strings up to 255 characters.');
+        }
+
         $slug = url_title($in['reference'] . '-' . $in['title'], '-', true);
 
         $noticeId = $db->table('notices')->insert([
             'kind' => ($in['kind'] ?? 'tender') === 'auction' ? 'auction' : 'tender',
             'reference' => $in['reference'], 'slug' => $slug, 'title' => $in['title'],
-            'summary' => $in['summary'] ?? null, 'description' => $in['description'] ?? null,
+            'title_si' => ! empty($in['title_si']) ? trim((string) $in['title_si']) : null,
+            'title_ta' => ! empty($in['title_ta']) ? trim((string) $in['title_ta']) : null,
+            'summary' => $in['summary'] ?? null,
+            'summary_si' => ! empty($in['summary_si']) ? trim((string) $in['summary_si']) : null,
+            'summary_ta' => ! empty($in['summary_ta']) ? trim((string) $in['summary_ta']) : null,
+            'description' => $in['description'] ?? null,
+            'description_si' => ! empty($in['description_si']) ? trim((string) $in['description_si']) : null,
+            'description_ta' => ! empty($in['description_ta']) ? trim((string) $in['description_ta']) : null,
             'org_id' => $orgId,
             'category_id' => $in['category_id'] ?? null, 'district_id' => $in['district_id'] ?? null,
             'sector' => $in['sector'] ?? 'government',

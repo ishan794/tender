@@ -49,7 +49,7 @@ class ForeignKeyIntegrityTest extends CIUnitTestCase
             }
         }
 
-        $this->assertEquals(79, $totalFks, 'Database schema must contain exactly 79 enforced foreign key relationships.');
+        $this->assertEquals(80, $totalFks, 'Database schema must contain exactly 80 enforced foreign key relationships.');
     }
 
     /**

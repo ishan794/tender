@@ -35,6 +35,19 @@ export interface Notice {
   documents?: NoticeDocument[];
   matched_by?: string[];
   auction?: AuctionLot;
+  locale?: string;
+  is_fallback?: boolean;
+  title_si?: string | null;
+  title_ta?: string | null;
+  summary_si?: string | null;
+  summary_ta?: string | null;
+  description_si?: string | null;
+  description_ta?: string | null;
+  translations?: {
+    en?: { title?: string | null; summary?: string | null; description?: string | null; category?: string | null; district?: string | null; buyer?: string | null };
+    si?: { title?: string | null; summary?: string | null; description?: string | null; category?: string | null; district?: string | null; buyer?: string | null };
+    ta?: { title?: string | null; summary?: string | null; description?: string | null; category?: string | null; district?: string | null; buyer?: string | null };
+  };
 }
 
 export interface NoticeDocument {

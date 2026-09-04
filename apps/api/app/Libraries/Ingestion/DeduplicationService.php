@@ -25,7 +25,7 @@ class DeduplicationService
      */
     public static function isDuplicate(string $slug, string $fingerprint): bool
     {
-        $db = db_connect();
+        $db = \Config\Database::connect();
 
         // 1. Exact slug match
         $slugExists = $db->table('notices')->where('slug', $slug)->countAllResults() > 0;

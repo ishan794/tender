@@ -17,6 +17,10 @@ function SupplierDashboardContent() {
   const tabParam = searchParams.get("tab") as DashboardView | null;
   const [activeView, setActiveView] = useState<DashboardView>(tabParam || "overview");
 
+  useEffect(() => {
+    router.replace("/app");
+  }, [router]);
+
   // User Profile State
   const [userProfile, setUserProfile] = useState({
     name: "Kamal Perera",

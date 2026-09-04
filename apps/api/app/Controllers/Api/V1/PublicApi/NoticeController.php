@@ -42,18 +42,37 @@ class NoticeController extends BaseApiController
         ];
     }
 
+    protected function locale(): string
+    {
+        $loc = strtolower((string) ($this->request->getGet('locale') ?: $this->request->getGet('lang')));
+        if (in_array($loc, ['si', 'ta', 'en'], true)) {
+            return $loc;
+        }
+
+        $accept = strtolower($this->request->getHeaderLine('Accept-Language'));
+        if (str_contains($accept, 'si')) {
+            return 'si';
+        }
+        if (str_contains($accept, 'ta')) {
+            return 'ta';
+        }
+
+        return 'en';
+    }
+
     public function index()
     {
-        $model = model(NoticeModel::class);
-        $f     = $this->filters();
-        $tier  = NoticeTransformer::tierFor($this->viewer());
-        $per   = $this->per();
-        $page  = $this->page();
+        $model  = model(NoticeModel::class);
+        $f      = $this->filters();
+        $tier   = NoticeTransformer::tierFor($this->viewer());
+        $per    = $this->per();
+        $page   = $this->page();
+        $locale = $this->locale();
 
         $result = $model->search($f, $page, $per, (string) ($this->request->getGet('sort') ?: 'closing_at'));
 
         return $this->ok(
-            NoticeTransformer::collection($result['rows'], $tier),
+            NoticeTransformer::collection($result['rows'], $tier, [], $locale),
             [
                 'page' => $page, 'per_page' => $per, 'total' => $result['total'],
                 'pages' => (int) ceil($result['total'] / $per),
@@ -61,6 +80,7 @@ class NoticeController extends BaseApiController
                 'status_counts' => $model->statusCounts($f),
                 'value_bands' => NoticeModel::VALUE_BANDS,
                 'tier' => $tier,
+                'locale' => $locale,
             ]
         );
     }
@@ -110,7 +130,9 @@ class NoticeController extends BaseApiController
             }
         }
 
-        return $this->ok(NoticeTransformer::one($notice, $tier, $extra), ['tier' => $tier]);
+        $locale = $this->locale();
+
+        return $this->ok(NoticeTransformer::one($notice, $tier, $extra, $locale), ['tier' => $tier, 'locale' => $locale]);
     }
 
     protected function lot(array $lot): array

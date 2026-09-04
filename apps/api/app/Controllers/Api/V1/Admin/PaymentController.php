@@ -61,6 +61,13 @@ class PaymentController extends BaseApiController
         ]);
         $db->transCommit();
 
+        service('eventLedger')->record('payment', $id, 'payment.confirmed', "Payment #{$id} confirmed by staff #{$this->request->userId}", [
+            'payment_id' => $id,
+            'org_id'     => $p['org_id'],
+            'plan'       => $p['plan'],
+            'term'       => $p['term'],
+        ]);
+
         return $this->ok([
             'state' => 'confirmed',
             'renews_at' => date('c', strtotime("+{$months} months", $from)),
@@ -89,6 +96,12 @@ class PaymentController extends BaseApiController
             'reviewed_by' => (int) $this->request->userId, 'reviewed_at' => date('Y-m-d H:i:s'),
         ]);
         model('App\Models\OrganisationModel')->update((int) $p['org_id'], ['sub_status' => 'none']);
+
+        service('eventLedger')->record('payment', $id, 'payment.rejected', "Payment #{$id} rejected: {$reason}", [
+            'payment_id' => $id,
+            'org_id'     => $p['org_id'],
+            'reason'     => $reason,
+        ]);
 
         return $this->ok(['state' => 'rejected', 'reason' => $reason]);
     }

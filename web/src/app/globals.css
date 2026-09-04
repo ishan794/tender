@@ -17,6 +17,12 @@
   --body: 14px;
 }
 
+@media (pointer: coarse) {
+  :root {
+    --ctl-h: 44px;
+  }
+}
+
 [data-density="compact"] {
   --row-py: 8px;
   --row-h: 43px;

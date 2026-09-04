@@ -17,6 +17,10 @@ class ProcurementSeeder extends Seeder
 {
     public function run(): void
     {
+        if (defined('CI_ENVIRONMENT') && CI_ENVIRONMENT === 'production') {
+            throw new \RuntimeException('SAFETY VIOLATION: ProcurementSeeder cannot be executed in production environment. Development fixtures are prohibited.');
+        }
+
         $db   = $this->db;
         $now  = static fn (string $m) => date('Y-m-d H:i:s', strtotime($m));
         $slug = static fn (string $s) => trim(strtolower(preg_replace('/[^a-z0-9]+/i', '-', $s)), '-');

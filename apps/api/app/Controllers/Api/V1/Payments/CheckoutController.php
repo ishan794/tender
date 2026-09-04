@@ -188,6 +188,14 @@ class CheckoutController extends BaseApiController
                 ]);
 
                 $db->transCommit();
+
+                service('eventLedger')->record('order', (int) $order['id'], 'order.paid', "Order {$order['order_id']} paid via PayHere (LKR {$order['amount']})", [
+                    'order_id'       => $order['order_id'],
+                    'transaction_id' => $paymentId,
+                    'amount'         => $order['amount'],
+                    'org_id'         => $order['org_id'],
+                    'plan'           => $order['plan'],
+                ]);
             } catch (\Throwable $e) {
                 $db->transRollback();
                 return problem(500, 'transition_failed', 'Could not complete order state transition.');

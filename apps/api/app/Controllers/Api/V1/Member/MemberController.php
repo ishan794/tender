@@ -103,6 +103,23 @@ class MemberController extends BaseApiController
             ]);
         }
 
+        $db = db_connect();
+        $proc = $db->table('procurements')->where('notice_id', $noticeId)->get()->getFirstRow('array');
+        $notice = model('App\Models\NoticeModel')->find($noticeId);
+        if ($proc && $notice && ((float) ($notice['document_fee'] ?? 0)) > 0 && ($doc['kind'] ?? 'bidding') === 'bidding') {
+            $bought = $db->table('doc_purchases')
+                ->where('procurement_id', $proc['id'])
+                ->where('buyer_org_id', (int) $this->request->orgId)
+                ->countAllResults() > 0;
+            if (! $bought) {
+                return problem(403, 'documents_not_purchased', 'You must buy the bidding documents before accessing download links.', [
+                    'fee'      => (float) $notice['document_fee'],
+                    'currency' => $notice['currency'] ?? 'LKR',
+                    'buy_url'  => "/api/v1/me/tenders/{$proc['id']}/buy-documents",
+                ]);
+            }
+        }
+
         $expires = time() + 300;
         $userId  = (int) $this->request->userId;
         $sig     = DocumentStore::sign($docId, $userId, $expires);
@@ -186,6 +203,74 @@ class MemberController extends BaseApiController
             'per_week'    => $perWeek,
             'sample'      => NoticeTransformer::collection($sample, 'free'),
         ], ['warning' => $warning]);
+    }
+
+    public function updateProfile(int $id)
+    {
+        $orgId   = (int) $this->request->orgId;
+        $model   = model(AlertProfileModel::class);
+        $profile = $model->where('org_id', $orgId)->find($id);
+
+        if (! $profile) {
+            return problem(404, 'not_found', 'No such profile.');
+        }
+
+        $in = $this->body();
+        $csv = static fn ($v) => is_array($v) ? implode(',', $v) : (string) ($v ?? '');
+
+        $updates = [];
+        if (isset($in['name']) && trim((string) $in['name']) !== '') {
+            $updates['name'] = trim((string) $in['name']);
+        }
+        if (isset($in['kinds'])) {
+            $updates['kinds'] = $csv($in['kinds']) ?: 'tender';
+        }
+        if (isset($in['categories'])) {
+            $updates['category_slugs'] = $csv($in['categories']);
+        }
+        if (isset($in['districts'])) {
+            $updates['district_slugs'] = $csv($in['districts']);
+        }
+        if (isset($in['keywords'])) {
+            $updates['keywords'] = $csv($in['keywords']);
+        }
+        if (array_key_exists('min_value', $in)) {
+            $updates['min_value'] = $in['min_value'] !== null && $in['min_value'] !== '' ? (float) $in['min_value'] : null;
+        }
+        if (array_key_exists('max_value', $in)) {
+            $updates['max_value'] = $in['max_value'] !== null && $in['max_value'] !== '' ? (float) $in['max_value'] : null;
+        }
+        if (isset($in['channels'])) {
+            $updates['channels'] = $csv($in['channels']) ?: 'inapp';
+        }
+        if (array_key_exists('active', $in)) {
+            $updates['active'] = !empty($in['active']) ? 1 : 0;
+        }
+
+        if (! empty($updates)) {
+            $model->update($id, $updates);
+            service('eventLedger')->record('alert_profile', $id, 'profile.updated', "Alert profile #{$id} updated", $updates);
+        }
+
+        return $this->ok($model->find($id));
+    }
+
+    public function deleteProfile(int $id)
+    {
+        $orgId   = (int) $this->request->orgId;
+        $model   = model(AlertProfileModel::class);
+        $profile = $model->where('org_id', $orgId)->find($id);
+
+        if (! $profile) {
+            return problem(404, 'not_found', 'No such profile.');
+        }
+
+        $model->delete($id);
+        service('eventLedger')->record('alert_profile', $id, 'profile.deleted', "Alert profile #{$id} deleted", [
+            'name' => $profile['name'],
+        ]);
+
+        return $this->ok(['id' => $id, 'deleted' => true]);
     }
 
     // ------------------------------------------------------- subscription

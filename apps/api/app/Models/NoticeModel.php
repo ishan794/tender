@@ -11,7 +11,7 @@ class NoticeModel extends Model
     protected $returnType    = 'array';
     protected $useTimestamps = true;
     protected $allowedFields = [
-        'kind','reference','slug','title','title_si','title_ta','summary','description',
+        'kind','reference','slug','title','title_si','title_ta','summary','summary_si','summary_ta','description','description_si','description_ta',
         'authority_id','org_id','category_id','district_id','sector','estimated_value','currency',
         'document_fee','bid_security','contact_officer','contact_phone','contact_email',
         'source_url','source_id','published_at','closing_at','opening_at','status','verified',
@@ -53,7 +53,11 @@ class NoticeModel extends Model
             if (! empty($f['q'])) {
                 $b->groupStart()
                   ->like('notices.title', $f['q'])
+                  ->orLike('notices.title_si', $f['q'])
+                  ->orLike('notices.title_ta', $f['q'])
                   ->orLike('notices.summary', $f['q'])
+                  ->orLike('notices.summary_si', $f['q'])
+                  ->orLike('notices.summary_ta', $f['q'])
                   ->orLike('notices.reference', $f['q'])
                   ->groupEnd();
             }
@@ -121,9 +125,9 @@ class NoticeModel extends Model
     private function base()
     {
         return $this->db->table('notices')
-            ->select('notices.*, categories.name AS category_name, categories.slug AS category_slug,
-                      districts.name AS district_name, districts.slug AS district_slug,
-                      authorities.name AS authority_name, organisations.name AS org_name')
+            ->select('notices.*, categories.name AS category_name, categories.name_si AS category_name_si, categories.name_ta AS category_name_ta, categories.slug AS category_slug,
+                      districts.name AS district_name, districts.name_si AS district_name_si, districts.name_ta AS district_name_ta, districts.slug AS district_slug,
+                      authorities.name AS authority_name, authorities.name_si AS authority_name_si, authorities.name_ta AS authority_name_ta, organisations.name AS org_name')
             ->join('categories', 'categories.id = notices.category_id', 'left')
             ->join('districts', 'districts.id = notices.district_id', 'left')
             ->join('authorities', 'authorities.id = notices.authority_id', 'left')

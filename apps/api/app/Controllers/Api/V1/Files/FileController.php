@@ -43,19 +43,48 @@ class FileController extends BaseApiController
             return $deny();
         }
 
+        // On-read integrity verification: fail closed if disk blob is tampered or corrupted.
+        if (! hash_equals((string) $doc['sha256'], hash('sha256', $bytes))) {
+            return problem(500, 'integrity_check_failed', 'Document integrity check failed: file corrupted or tampered.');
+        }
+
         // The path comes from the hash. A stored file name is NEVER used as a
         // path; only the display name comes from the row, and it is sanitised
         // before it reaches a header.
         $name = preg_replace('/[^A-Za-z0-9._ -]/', '_', (string) $doc['name']);
 
-        // Download logging — who pulled which document, for the audit trail.
+        // Download logging — both for queryable counter and append-only Event Ledger.
         try {
-            db_connect()->table('document_downloads')->insert([
+            $db = db_connect();
+            $db->table('document_downloads')->insert([
                 'notice_document_id' => (int) $doc['id'],
-                'user_id' => isset($this->request->userId) ? (int) $this->request->userId : null,
+                'user_id' => $userId > 0 ? $userId : null,
                 'ip' => $this->request->getIPAddress(),
                 'created_at' => date('Y-m-d H:i:s'),
             ]);
+
+            $proc = $db->table('procurements')->where('notice_id', (int) $doc['notice_id'])->get()->getFirstRow('array');
+            $user = $db->table('users')->where('id', $userId)->get()->getFirstRow('array');
+            $actor = $user ? [
+                'id'   => (int) $user['id'],
+                'name' => $user['name'] ?? null,
+                'role' => $user['role'] ?? null,
+                'org'  => (int) ($user['org_id'] ?? 0),
+            ] : null;
+
+            if ($proc) {
+                service('eventLedger')->record('procurement', (int) $proc['id'], 'doc.downloaded', "Document {$doc['name']} downloaded", [
+                    'doc_id' => (int) $doc['id'],
+                    'name'   => $doc['name'],
+                    'sha256' => $doc['sha256'],
+                ], $actor);
+            } else {
+                service('eventLedger')->record('notice', (int) $doc['notice_id'], 'doc.downloaded', "Document {$doc['name']} downloaded", [
+                    'doc_id' => (int) $doc['id'],
+                    'name'   => $doc['name'],
+                    'sha256' => $doc['sha256'],
+                ], $actor);
+            }
         } catch (\Throwable $e) {
             log_message('error', 'download log failed: ' . $e->getMessage());
         }
@@ -65,6 +94,7 @@ class FileController extends BaseApiController
             ->setContentType($doc['mime'] ?: 'application/octet-stream')
             ->setHeader('Content-Disposition', 'attachment; filename="' . $name . '"')
             ->setHeader('X-Content-Type-Options', 'nosniff')
+            ->setHeader('Content-Security-Policy', "default-src 'none'; sandbox")
             ->setHeader('ETag', '"' . $doc['sha256'] . '"')
             ->setHeader('Cache-Control', 'private, no-store')
             ->setBody($bytes);

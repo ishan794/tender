@@ -30,6 +30,20 @@ final class DocumentStore
         return sprintf('%s/%s/%s.%s', substr($sha256, 0, 2), substr($sha256, 2, 2), $sha256, $ext);
     }
 
+    public function isSafePath(string $relative): bool
+    {
+        if (str_contains($relative, "\0") || str_contains($relative, '..') || str_contains($relative, '%2e') || str_contains($relative, '%2E')) {
+            return false;
+        }
+
+        // Absolute path attempts on unix or windows
+        if (str_starts_with($relative, '/') || str_starts_with($relative, '\\') || preg_match('/^[A-Za-z]:/i', $relative)) {
+            return false;
+        }
+
+        return true;
+    }
+
     public function absolute(string $relative): string
     {
         return rtrim($this->root, '/') . '/' . ltrim($relative, '/');
@@ -37,6 +51,10 @@ final class DocumentStore
 
     public function exists(string $relative): bool
     {
+        if (! $this->isSafePath($relative)) {
+            return false;
+        }
+
         return is_file($this->absolute($relative));
     }
 
@@ -61,9 +79,37 @@ final class DocumentStore
 
     public function read(string $relative): ?string
     {
+        if (! $this->isSafePath($relative)) {
+            return null;
+        }
+
         $abs = $this->absolute($relative);
 
         return is_file($abs) ? (string) file_get_contents($abs) : null;
+    }
+
+    public function fetch(string $relative): array
+    {
+        if (! $this->isSafePath($relative)) {
+            return ['ok' => false, 'error' => 'Path traversal detected.', 'content' => null];
+        }
+
+        $content = $this->read($relative);
+        if ($content === null) {
+            return ['ok' => false, 'error' => 'File not found.', 'content' => null];
+        }
+
+        return ['ok' => true, 'error' => null, 'content' => $content];
+    }
+
+    public function verifyContent(string $relative, string $expectedSha256): bool
+    {
+        $bytes = $this->read($relative);
+        if ($bytes === null) {
+            return false;
+        }
+
+        return hash_equals(strtolower($expectedSha256), hash('sha256', $bytes));
     }
 
     public static function signingKey(): string

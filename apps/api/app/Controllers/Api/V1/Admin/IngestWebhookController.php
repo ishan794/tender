@@ -26,50 +26,14 @@ class IngestWebhookController extends BaseApiController
             return problem(422, 'empty_payload', 'Payload must contain a non-empty array of notice items.');
         }
 
-        $inserted = 0;
-        $skipped  = 0;
-        $db = db_connect();
-
-        foreach ($items as $item) {
-            $title = trim($item['title'] ?? '');
-            if (empty($title)) {
-                $skipped++;
-                continue;
-            }
-
-            $slug = url_title($title, '-', true) . '-' . substr(bin2hex(random_bytes(2)), 0, 4);
-            $hash = DeduplicationService::fingerprint($title, $item['ref_no'] ?? null, $item['closing_at'] ?? null);
-
-            if (DeduplicationService::isDuplicate($slug, $hash)) {
-                $skipped++;
-                continue;
-            }
-
-            $category = $item['category_id'] ?? AutoCategoriser::classify($title, $item['description'] ?? '');
-
-            $db->table('notices')->insert([
-                'slug'           => $slug,
-                'title'          => $title,
-                'description'    => $item['description'] ?? '',
-                'category_id'    => $category,
-                'buyer_name'     => $item['buyer_name'] ?? 'Government Ministry / Department',
-                'ref_no'         => $item['ref_no'] ?? null,
-                'source_hash'    => $hash,
-                'source_name'    => $item['source'] ?? 'crawler_push',
-                'closing_at'     => $item['closing_at'] ?? date('Y-m-d H:i:s', strtotime('+21 days')),
-                'published_at'   => date('Y-m-d H:i:s'),
-                'status'         => 'live',
-                'stage_idx'      => 1, // Published stage
-                'created_at'     => date('Y-m-d H:i:s'),
-            ]);
-
-            $inserted++;
-        }
+        $crawlerService = new \App\Libraries\Ingestion\CrawlerIngestionService();
+        $res = $crawlerService->ingestItems($items, null, 'push');
 
         return $this->ok([
             'processed' => count($items),
-            'inserted'  => $inserted,
-            'skipped'   => $skipped,
+            'inserted'  => $res['items_inserted'],
+            'skipped'   => $res['items_skipped'],
+            'run_id'    => $res['run_id'],
         ]);
     }
 }

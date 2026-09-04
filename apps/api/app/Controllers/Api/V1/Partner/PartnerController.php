@@ -33,27 +33,42 @@ class PartnerController extends BaseApiController
         $in    = $this->body();
         $url   = (string) ($in['url'] ?? '');
         $event = (string) ($in['event'] ?? '');
+        $orgId = (int) $this->request->orgId;
 
-        if (! str_starts_with($url, 'https://')) {
-            return problem(422, 'insecure_url', 'Webhook URLs must be https.');
+        $dispatcher = new \App\Libraries\Webhooks\WebhookDispatcher();
+        $res = $dispatcher->register($orgId, $url, $event);
+
+        if (! $res['ok']) {
+            return problem($res['status'] ?? 422, 'validation_failed', $res['error'], $res['allowed'] ?? []);
         }
-        if (! in_array($event, ['notice.published', 'notice.updated', 'award.published'], true)) {
-            return problem(422, 'unknown_event', 'Unknown event.', [
-                'allowed' => ['notice.published', 'notice.updated', 'award.published'],
-            ]);
-        }
 
-        $secret = bin2hex(random_bytes(24));
-        db_connect()->table('webhooks')->insert([
-            'org_id' => (int) $this->request->orgId, 'url' => $url, 'event' => $event,
-            'secret_hash' => hash('sha256', $secret), 'active' => 1,
-            'created_at' => date('Y-m-d H:i:s'),
-        ]);
-
-        return $this->ok(['url' => $url, 'event' => $event, 'signing_secret' => $secret], [
-            // Storing something we can show again later means storing something
-            // an attacker can read later.
-            'warning' => 'This secret is shown exactly once. If you lose it, rotate the webhook.',
+        return $this->ok([
+            'id'             => $res['id'],
+            'url'            => $res['url'],
+            'event'          => $res['event'],
+            'signing_secret' => $res['signing_secret'],
+        ], [
+            'warning' => $res['warning'],
         ], 201);
+    }
+
+    public function listWebhooks()
+    {
+        $orgId = (int) $this->request->orgId;
+        $dispatcher = new \App\Libraries\Webhooks\WebhookDispatcher();
+        return $this->ok($dispatcher->listForOrg($orgId));
+    }
+
+    public function deleteWebhook(int $id)
+    {
+        $orgId = (int) $this->request->orgId;
+        $dispatcher = new \App\Libraries\Webhooks\WebhookDispatcher();
+        $deleted = $dispatcher->deleteForOrg($orgId, $id);
+
+        if (! $deleted) {
+            return problem(404, 'not_found', 'Webhook not found or does not belong to your organisation.');
+        }
+
+        return $this->ok(['deleted' => true]);
     }
 }

@@ -70,6 +70,9 @@ $routes->group('api/v1', ['namespace' => 'App\Controllers\Api\V1'], static funct
         $routes->get('alert-profiles', 'MemberController::profiles');
         $routes->post('alert-profiles', 'MemberController::createProfile');
         $routes->get('alert-profiles/(:num)/preview', 'MemberController::previewProfile/$1');
+        $routes->put('alert-profiles/(:num)', 'MemberController::updateProfile/$1');
+        $routes->patch('alert-profiles/(:num)', 'MemberController::updateProfile/$1');
+        $routes->delete('alert-profiles/(:num)', 'MemberController::deleteProfile/$1');
     });
 
     $routes->group('me', [
@@ -106,6 +109,7 @@ $routes->group('api/v1', ['namespace' => 'App\Controllers\Api\V1'], static funct
         $routes->get('tenders/(:num)/documents/(:num)/url', 'SaleController::documentUrl/$1/$2');
         $routes->delete('tenders/(:num)/documents/(:num)', 'SaleController::deleteDocument/$1/$2');
         $routes->get('tenders/(:num)/documents/(:num)/versions', 'SaleController::versions/$1/$2');
+        $routes->post('tenders/(:num)/documents/(:num)/version', 'SaleController::uploadVersion/$1/$2');
         $routes->get('tenders/(:num)/purchasers', 'SaleController::purchasers/$1');
         $routes->get('tenders/(:num)/clarifications', 'SaleController::clarifications/$1');
         $routes->post('tenders/(:num)/clarifications/(:num)/answer', 'SaleController::answer/$1/$2');
@@ -180,6 +184,8 @@ $routes->group('api/v1', ['namespace' => 'App\Controllers\Api\V1'], static funct
         $routes->post('kyc', 'KycController::submit');
         $routes->get('notifications', 'NotificationController::index');
         $routes->post('notifications/(:num)/read', 'NotificationController::read/$1');
+        $routes->post('notifications/read-all', 'NotificationController::readAll');
+        $routes->get('notifications/unread-count', 'NotificationController::unreadCount');
         $routes->post('privacy/requests', 'PrivacyController::request');
         $routes->get('privacy/export', 'PrivacyController::export');
     });
@@ -208,8 +214,12 @@ $routes->group('api/v1', ['namespace' => 'App\Controllers\Api\V1'], static funct
         $routes->get('payments', 'PaymentController::index');
         $routes->post('payments/(:num)/confirm', 'PaymentController::confirm/$1');
         $routes->post('payments/(:num)/reject', 'PaymentController::reject/$1');
-        $routes->post('ingest/push', 'IngestWebhookController::push');
     });
+
+    // ----------------------------------------------------------- crawler ingestion
+    // Authenticated via X-Ingest-Key in controller
+    $routes->post('admin/ingest/push', 'Admin\IngestWebhookController::push');
+    $routes->post('ingest/push', 'Admin\IngestWebhookController::push');
 
     // ---------------------------------------------------------- partner
     $routes->group('partner', [
@@ -218,6 +228,8 @@ $routes->group('api/v1', ['namespace' => 'App\Controllers\Api\V1'], static funct
     ], static function ($routes) {
         $routes->get('notices', 'PartnerController::notices');
         $routes->post('webhooks', 'PartnerController::registerWebhook');
+        $routes->get('webhooks', 'PartnerController::listWebhooks');
+        $routes->delete('webhooks/(:num)', 'PartnerController::deleteWebhook/$1');
     });
 
     // The signature IS the authorisation — deliberately no auth filter here.

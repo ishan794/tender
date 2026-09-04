@@ -18,9 +18,20 @@ abstract class BaseApiController extends Controller
 
     protected function body(): array
     {
-        $json = $this->request->getJSON(true);
+        try {
+            $raw = (string) $this->request->getBody();
+            if ($raw !== '') {
+                $decoded = json_decode($raw, true);
+                if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+                    return $decoded;
+                }
+            }
+            $json = $this->request->getJSON(true);
 
-        return is_array($json) ? $json : ($this->request->getPost() ?: []);
+            return is_array($json) ? $json : ($this->request->getPost() ?: []);
+        } catch (\Throwable) {
+            return $this->request->getPost() ?: [];
+        }
     }
 
     /**
