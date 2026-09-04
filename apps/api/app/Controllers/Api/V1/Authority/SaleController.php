@@ -58,6 +58,14 @@ class SaleController extends WorkspaceBase
             'uploaded_by' => (int) $this->request->userId,
             'created_at' => date('Y-m-d H:i:s'), 'updated_at' => date('Y-m-d H:i:s'),
         ]);
+        $docId = (int) $db->insertID();
+
+        // Immutable version record (content-addressed hash), version numbered per document.
+        $db->table('document_versions')->insert([
+            'notice_document_id' => $docId, 'version' => 1, 'sha256' => $stored['sha256'],
+            'reason' => $this->request->getPost('reason') ?: 'Original', 'effective_date' => date('Y-m-d'),
+            'uploaded_by' => (int) $this->request->userId, 'created_at' => date('Y-m-d H:i:s'),
+        ]);
 
         $db->table('notices')->where('id', $proc['notice_id'])->set('documents_count',
             (string) $db->table('notice_documents')->where('notice_id', $proc['notice_id'])->countAllResults(), false)->update();
@@ -89,10 +97,32 @@ class SaleController extends WorkspaceBase
         if (! $proc) {
             return problem(404, 'not_found', 'No such tender.');
         }
+        // Deletion is refused while the tender is under a legal hold.
+        $held = db_connect()->table('legal_holds')
+            ->where('entity_type', 'procurement')->where('entity_id', $id)->where('released_at', null)
+            ->countAllResults() > 0;
+        if ($held) {
+            return problem(423, 'legal_hold', 'This tender is under a legal hold; its documents cannot be deleted.');
+        }
         db_connect()->table('notice_documents')->where('id', $docId)
             ->where('notice_id', $proc['notice_id'])->delete();
 
         return $this->ok(['deleted' => true]);
+    }
+
+    /** Version history + download count for a document. */
+    public function versions(int $id, int $docId)
+    {
+        $proc = $this->procurement($id);
+        if (! $proc) {
+            return problem(404, 'not_found', 'No such tender.');
+        }
+        $db = db_connect();
+
+        return $this->ok(
+            $db->table('document_versions')->where('notice_document_id', $docId)->orderBy('version', 'ASC')->get()->getResultArray(),
+            ['downloads' => (int) $db->table('document_downloads')->where('notice_document_id', $docId)->countAllResults()],
+        );
     }
 
     /** The legal record of who is entitled to bid, with the purchased-to-
@@ -237,6 +267,10 @@ class SaleController extends WorkspaceBase
         }
 
         $db->transCommit();
+
+        service('eventLedger')->record('procurement', $id, 'addendum.issued', "Addendum #{$number} issued", [
+            'number' => $number, 'reason' => $reason, 'new_closing_at' => $newClosing,
+        ]);
 
         return $this->ok(['number' => $number, 'new_closing_at' => $newClosing], [], 201);
     }

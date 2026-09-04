@@ -17,6 +17,7 @@ $routes->group('api/v1', ['namespace' => 'App\Controllers\Api\V1'], static funct
         $routes->get('auctions/(:segment)', 'AuctionController::show/$1');
         $routes->get('awards', 'MiscController::awards');
         $routes->get('stats/summary', 'MiscController::summary');
+        $routes->get('transparency', 'TransparencyController::index');
         $routes->get('taxonomy/(:segment)', 'MiscController::taxonomy/$1');
         $routes->post('notices/submit-rfp', 'RfpSubmissionController::submit');
     });
@@ -55,6 +56,9 @@ $routes->group('api/v1', ['namespace' => 'App\Controllers\Api\V1'], static funct
         $routes->post('bids', 'BidController::create');
         $routes->post('bids/(:num)/stage', 'BidController::move/$1');
         $routes->get('vault', 'BidController::vault');
+        $routes->get('complaints', 'ComplaintController::index');
+        $routes->post('complaints', 'ComplaintController::create');
+        $routes->post('complaints/(:num)/appeal', 'ComplaintController::appeal/$1');
     });
 
     $routes->group('me', [
@@ -100,6 +104,7 @@ $routes->group('api/v1', ['namespace' => 'App\Controllers\Api\V1'], static funct
         $routes->post('tenders/(:num)/documents', 'SaleController::upload/$1');
         $routes->get('tenders/(:num)/documents/(:num)/url', 'SaleController::documentUrl/$1/$2');
         $routes->delete('tenders/(:num)/documents/(:num)', 'SaleController::deleteDocument/$1/$2');
+        $routes->get('tenders/(:num)/documents/(:num)/versions', 'SaleController::versions/$1/$2');
         $routes->get('tenders/(:num)/purchasers', 'SaleController::purchasers/$1');
         $routes->get('tenders/(:num)/clarifications', 'SaleController::clarifications/$1');
         $routes->post('tenders/(:num)/clarifications/(:num)/answer', 'SaleController::answer/$1/$2');
@@ -119,8 +124,39 @@ $routes->group('api/v1', ['namespace' => 'App\Controllers\Api\V1'], static funct
         $routes->post('tenders/(:num)/award', 'AwardController::create/$1');
         $routes->post('tenders/(:num)/rating', 'AwardController::rate/$1');
         $routes->get('tenders/(:num)/evidence', 'AwardController::evidence/$1');
+        $routes->get('tenders/(:num)/ledger', 'AuditController::ledger/$1');
+        $routes->get('tenders/(:num)/complaints', 'ComplaintController::forTender/$1');
+        $routes->post('complaints/(:num)/transition', 'ComplaintController::transition/$1');
+
+        // Procurement planning
+        $routes->get('plans', 'PlanController::index');
+        $routes->post('plans', 'PlanController::create');
+        $routes->post('plans/(:num)/submit', 'PlanController::submit/$1');
+        $routes->post('plans/(:num)/approve', 'PlanController::approve/$1');
+        $routes->post('plans/(:num)/revise', 'PlanController::revise/$1');
+        $routes->post('plans/(:num)/link', 'PlanController::linkTender/$1');
+
+        // Contract management (post-award lifecycle)
+        $routes->get('contracts', 'ContractController::index');
+        $routes->post('contracts', 'ContractController::create');
+        $routes->get('contracts/(:num)', 'ContractController::show/$1');
+        $routes->post('contracts/(:num)/activate', 'ContractController::activate/$1');
+        $routes->post('contracts/(:num)/transition', 'ContractController::transition/$1');
+        $routes->post('contracts/(:num)/milestones', 'ContractController::addMilestone/$1');
+        $routes->post('contracts/(:num)/milestones/(:num)/meet', 'ContractController::meetMilestone/$1/$2');
+        $routes->post('contracts/(:num)/variations', 'ContractController::addVariation/$1');
+        $routes->post('contracts/(:num)/invoices', 'ContractController::addInvoice/$1');
+
+        // Digital signing (app-level attestation)
+        $routes->get('tenders/(:num)/signatures', 'SigningController::forTender/$1');
+        $routes->post('tenders/(:num)/sign', 'SigningController::sign/$1');
 
         $routes->get('suppliers', 'TeamController::suppliers');
+        $routes->post('rules/evaluate', 'ComplianceController::evaluate');
+        $routes->get('calendar', 'CalendarController::index');
+        $routes->get('analytics', 'AnalyticsController::index');
+        $routes->post('tenders/(:num)/tco', 'TcoController::assess/$1');
+        $routes->get('tenders/(:num)/tco', 'TcoController::show/$1');
         $routes->get('team', 'TeamController::index');
         $routes->post('team/invitations', 'TeamController::invite');
         $routes->put('team/(:num)/role', 'TeamController::changeRole/$1');
@@ -134,6 +170,19 @@ $routes->group('api/v1', ['namespace' => 'App\Controllers\Api\V1'], static funct
     });
 
     // ------------------------------------------------------------ admin
+    // ------------------------------------------- account (any authenticated org)
+    $routes->group('account', [
+        'namespace' => 'App\Controllers\Api\V1\Account',
+        'filter'    => ['auth-jwt', 'tenant'],
+    ], static function ($routes) {
+        $routes->get('kyc', 'KycController::status');
+        $routes->post('kyc', 'KycController::submit');
+        $routes->get('notifications', 'NotificationController::index');
+        $routes->post('notifications/(:num)/read', 'NotificationController::read/$1');
+        $routes->post('privacy/requests', 'PrivacyController::request');
+        $routes->get('privacy/export', 'PrivacyController::export');
+    });
+
     $routes->group('admin', [
         'namespace' => 'App\Controllers\Api\V1\Admin',
         'filter'    => ['auth-jwt', 'tenant', 'group:staff', 'entitlement:admin'],
@@ -147,6 +196,14 @@ $routes->group('api/v1', ['namespace' => 'App\Controllers\Api\V1'], static funct
         $routes->post('ingest/sources/(:num)/run', 'ReportController::runSource/$1');
         $routes->get('organisations', 'ReportController::organisations');
         $routes->post('organisations/(:num)/verify', 'ReportController::verifyOrg/$1');
+        $routes->get('kyc', 'KycController::pending');
+        $routes->post('kyc/(:num)/review', 'KycController::review/$1');
+        $routes->post('organisations/(:num)/suspend', 'KycController::suspend/$1');
+        $routes->get('risk-signals', 'RiskController::signals');
+        $routes->get('security/events', 'SecurityController::events');
+        $routes->get('legal-holds', 'RetentionController::holds');
+        $routes->post('legal-holds', 'RetentionController::place');
+        $routes->post('legal-holds/(:num)/release', 'RetentionController::release/$1');
         $routes->get('payments', 'PaymentController::index');
         $routes->post('payments/(:num)/confirm', 'PaymentController::confirm/$1');
         $routes->post('payments/(:num)/reject', 'PaymentController::reject/$1');

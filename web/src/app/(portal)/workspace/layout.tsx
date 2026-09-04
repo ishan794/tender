@@ -13,6 +13,10 @@ export default async function WorkspaceLayout({ children }: { children: React.Re
       userName={`${s.user.name} · ${s.user.role}`}
       nav={[
         { href: "/workspace", label: "Tenders" },
+        { href: "/workspace/planning", label: "Planning" },
+        { href: "/workspace/contracts", label: "Contracts" },
+        { href: "/workspace/calendar", label: "Calendar" },
+        { href: "/workspace/analytics", label: "Analytics" },
         { href: "/workspace/auctions", label: "Auctions" },
         { href: "/workspace/suppliers", label: "Suppliers" },
         { href: "/workspace/team", label: "Team" },

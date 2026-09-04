@@ -53,9 +53,23 @@ export async function NoticeDetail({ slug, kind }: { slug: string; kind: "tender
     ...(locked.includes("buyer") ? {} : n.buyer ? { provider: { "@type": "GovernmentOrganization", name: n.buyer } } : {}),
   };
 
+  /**
+   * JSON.stringify does NOT escape `<`, `>` or `&`, so a notice title
+   * containing `</script>` — and titles come from the untrusted gazette
+   * crawler — would close this block early and inject markup (stored XSS).
+   * Escaping those code points as \uXXXX keeps the JSON byte-identical to a
+   * parser while making the closing-tag sequence impossible to form.
+   */
+  const jsonLdSafe = JSON.stringify(jsonLd)
+    .replace(/</g, "\\u003c")
+    .replace(/>/g, "\\u003e")
+    .replace(/&/g, "\\u0026")
+    .replace(/\u2028/g, "\\u2028")
+    .replace(/\u2029/g, "\\u2029");
+
   return (
     <div className="mx-auto max-w-[1100px] px-5 py-8">
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLdSafe }} />
 
       <nav className="mb-4 flex items-center gap-1.5 text-[12px] text-ink-500">
         <Link href="/" className="hover:text-brand-700">Home</Link><span className="text-ink-300">/</span>

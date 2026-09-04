@@ -1,26 +1,37 @@
-version: '3.8'
+# TenderHub production stack.
+#
+# Secrets are REQUIRED, not defaulted. The previous file used
+# `${MYSQL_PASSWORD:-tenderhub_pass_2026}` shell-defaults, so a missing .env
+# silently started the stack with repository-published credentials. The `:?`
+# form below makes compose refuse to start when a value is unset. Provide them
+# via a .env file next to this one (see .env.production.example) or the host
+# environment — never inline here.
+#
+# The single JWT secret is shared by the API (signs tokens as `auth.jwtSecret`)
+# and the BFF (verifies them as `AUTH_JWT_SECRET`). They MUST be the same value.
 
 services:
-  # 1. MySQL 8 Database
+  # --- MySQL 8 -------------------------------------------------------------
   db:
     image: mysql:8.0
     container_name: tenderhub_mysql
     restart: unless-stopped
     environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-tenderhub_root_secure_pass_2026}
-      MYSQL_DATABASE: ${MYSQL_DATABASE:-tenderhub_prod}
-      MYSQL_USER: ${MYSQL_USER:-tenderhub_user}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-tenderhub_pass_2026}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?set MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:?set MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER:?set MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?set MYSQL_PASSWORD}
     volumes:
       - mysql_data:/var/lib/mysql
-    networks:
-      - tenderhub_net
+    networks: [tenderhub_net]
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
-      timeout: 20s
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 15s
+      timeout: 10s
       retries: 10
+      start_period: 30s
 
-  # 2. CodeIgniter 4.7.4 (PHP 8.3-FPM API)
+  # --- CodeIgniter 4 API (PHP 8.3-FPM) -------------------------------------
   api:
     build:
       context: ./apps/api
@@ -29,20 +40,44 @@ services:
     restart: unless-stopped
     environment:
       CI_ENVIRONMENT: production
+      app.baseURL: ${APP_BASE_URL:?set APP_BASE_URL}
       database.default.hostname: db
-      database.default.database: ${MYSQL_DATABASE:-tenderhub_prod}
-      database.default.username: ${MYSQL_USER:-tenderhub_user}
-      database.default.password: ${MYSQL_PASSWORD:-tenderhub_pass_2026}
+      database.default.database: ${MYSQL_DATABASE:?set MYSQL_DATABASE}
+      database.default.username: ${MYSQL_USER:?set MYSQL_USER}
+      database.default.password: ${MYSQL_PASSWORD:?set MYSQL_PASSWORD}
       database.default.DBDriver: MySQLi
+      # Signing keys — same JWT secret the BFF verifies with.
+      auth.jwtSecret: ${JWT_SECRET:?set JWT_SECRET (>=32 chars, shared with web)}
+      files.signingKey: ${FILES_SIGNING_KEY:?set FILES_SIGNING_KEY}
+      INGEST_SECRET_KEY: ${INGEST_SECRET_KEY:?set INGEST_SECRET_KEY}
+      # Optional feature secrets — empty by default; the feature is inert until
+      # configured, and an empty value never blocks boot.
+      PAYHERE_MODE: ${PAYHERE_MODE:-live}
+      PAYHERE_MERCHANT_ID: ${PAYHERE_MERCHANT_ID:-}
+      PAYHERE_MERCHANT_SECRET: ${PAYHERE_MERCHANT_SECRET:-}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      S3_BUCKET: ${S3_BUCKET:-}
+      S3_REGION: ${S3_REGION:-auto}
+      S3_ENDPOINT: ${S3_ENDPOINT:-}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-}
+      SENTRY_DSN: ${SENTRY_DSN:-}
     volumes:
-      - ./apps/api/writable:/var/www/html/writable
+      # Persist the document blob store and logs across deploys.
+      - api_writable:/var/www/html/writable
     depends_on:
       db:
         condition: service_healthy
-    networks:
-      - tenderhub_net
+    networks: [tenderhub_net]
+    healthcheck:
+      test: ["CMD", "php", "-r", "exit(@fsockopen('db',3306)?0:1);"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
 
-  # 3. Next.js 16 Web Frontend
+  # --- Next.js 16 web (BFF) ------------------------------------------------
   web:
     build:
       context: ./web
@@ -51,11 +86,20 @@ services:
     restart: unless-stopped
     environment:
       NODE_ENV: production
-      NEXT_PUBLIC_API_URL: https://tenderhub.lk/api/v1
-    networks:
-      - tenderhub_net
+      # The BFF's authoritative backend: the internal FastCGI gateway in the
+      # nginx service (port 8080 is NOT published to the host).
+      API_BASE: http://nginx:8080
+      AUTH_JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET (>=32 chars, shared with api)}
+      SESSION_SECRET: ${SESSION_SECRET:?set SESSION_SECRET (>=32 chars)}
+      # Start with CSP in report-only; flip to 1 once reports are clean.
+      CSP_ENFORCE: ${CSP_ENFORCE:-0}
+      FREE_VIEW_LIMIT: ${FREE_VIEW_LIMIT:-5}
+    depends_on:
+      api:
+        condition: service_started
+    networks: [tenderhub_net]
 
-  # 4. Nginx Reverse Proxy & SSL Termination
+  # --- nginx: public TLS termination + internal FastCGI gateway ------------
   nginx:
     image: nginx:alpine
     container_name: tenderhub_nginx
@@ -63,6 +107,8 @@ services:
     ports:
       - "80:80"
       - "443:443"
+      # NOTE: 8080 is intentionally NOT published — the FastCGI gateway is
+      # reachable only on tenderhub_net, i.e. by the web container.
     volumes:
       - ./nginx/tenderhub.conf:/etc/nginx/conf.d/default.conf:ro
       - ./apps/api/public:/var/www/html/public:ro
@@ -71,8 +117,7 @@ services:
     depends_on:
       - api
       - web
-    networks:
-      - tenderhub_net
+    networks: [tenderhub_net]
 
 networks:
   tenderhub_net:
@@ -80,5 +125,6 @@ networks:
 
 volumes:
   mysql_data:
+  api_writable:
   certbot_etc:
   certbot_var:

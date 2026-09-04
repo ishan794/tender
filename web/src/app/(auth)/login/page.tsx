@@ -17,40 +17,95 @@ export default function LoginPage() {
   const [resetSent, setResetSent] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
-  const handleLoginSubmit = (e: React.FormEvent) => {
+  /**
+   * Real authentication. This used to set `tenderhub_auth=authenticated` from
+   * client-side JavaScript and redirect — no server was ever contacted, and
+   * because the cookie was written by JS it was not httpOnly, so any visitor
+   * could set it in devtools and reach the dashboard. The credentials now go
+   * to the BFF, which forwards them to CodeIgniter and returns httpOnly
+   * cookies only if the password actually verified.
+   */
+  const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!email.trim() || !email.includes("@") || !email.includes(".")) {
       toast.error("Invalid Credentials", "Please enter a valid authorized supplier email address.");
       return;
     }
-    if (!password || password.length < 6) {
-      toast.error("Invalid Credentials", "Password must be at least 6 characters.");
+    if (!password) {
+      toast.error("Invalid Credentials", "Please enter your password.");
       return;
     }
 
     setIsLoading(true);
-    // Set authenticated session cookie for route protection middleware
-    document.cookie = "tenderhub_auth=authenticated; path=/; max-age=86400; SameSite=Strict";
+    try {
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.trim(), password }),
+      });
+      const json = await res.json().catch(() => null);
 
-    toast.success(
-      "Authorization Verified",
-      "Welcome back! Redirecting to your procurement dashboard..."
-    );
+      if (!res.ok) {
+        setIsLoading(false);
+        toast.error(
+          res.status === 429 ? "Too Many Attempts" : "Sign In Failed",
+          json?.detail ?? "E-mail or password is incorrect.",
+        );
+        return;
+      }
 
-    setTimeout(() => {
-      router.push("/dashboard");
-    }, 1200);
+      toast.success("Authorization Verified", "Welcome back. Opening your portal…");
+
+      // Land people where their account actually belongs.
+      const group = json?.data?.user?.group;
+      const home = group === "staff" ? "/console" : group === "company" ? "/workspace" : "/app";
+      router.push(home);
+      router.refresh();
+    } catch {
+      setIsLoading(false);
+      toast.error("Service Unavailable", "Sign-in is temporarily unavailable. Please try again shortly.");
+    }
   };
 
-  const handleResetSubmit = (e: React.FormEvent) => {
+  /**
+   * Password recovery actually calls the backend. Previously this only set
+   * local state and told the user a link had been dispatched — nothing was
+   * ever sent. The success message is now shown only when the server accepted
+   * the request. The response is deliberately identical whether or not the
+   * address is registered, so it cannot be used to enumerate accounts.
+   */
+  const handleResetSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!resetEmail.trim() || !resetEmail.includes("@") || !resetEmail.includes(".")) {
       toast.error("Invalid Email Format", "Please provide a valid registered corporate email address.");
       return;
     }
-    setResetSent(true);
-    toast.success("Recovery Dispatched", `A reset link was generated for ${resetEmail}.`);
+
+    setIsLoading(true);
+    try {
+      const res = await fetch("/api/auth/forgot-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: resetEmail.trim() }),
+      });
+      const json = await res.json().catch(() => null);
+      setIsLoading(false);
+
+      if (!res.ok) {
+        toast.error(
+          res.status === 429 ? "Too Many Attempts" : "Recovery Unavailable",
+          json?.detail ?? "We could not process that request. Please try again shortly.",
+        );
+        return;
+      }
+
+      setResetSent(true);
+      toast.success("Recovery Dispatched", "If that address has an account, a reset link is on its way.");
+    } catch {
+      setIsLoading(false);
+      toast.error("Service Unavailable", "Password recovery is temporarily unavailable. Please try again shortly.");
+    }
   };
 
   return (

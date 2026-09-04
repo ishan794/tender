@@ -153,12 +153,28 @@ class BidController extends BaseApiController
             // A content hash is recorded at lodgement, so what was submitted can
             // be proved later (Electronic Transactions Act No. 19 of 2006).
             'content_hash' => hash('sha256', $payload),
-            // The column exists; the envelope is NOT yet encrypted. See § 19/26.
             'cipher_path' => null,
             'status' => 'submitted',
             'received_at' => date('Y-m-d H:i:s'),
             'created_at' => date('Y-m-d H:i:s'), 'updated_at' => date('Y-m-d H:i:s'),
         ], true) ? $db->insertID() : 0;
+
+        // Seal the sensitive fields under the per-tender key, then remove the
+        // plaintext from the row. From here until the dual-control opening
+        // decrypts it, a database dump yields only ciphertext — the bid is
+        // encrypted at rest, not merely withheld by a query.
+        if ($id) {
+            service('crypto')->seal((int) $proc['id'], (int) $id, [
+                'bidder_name'  => $org['name'],
+                'total_price'  => $in['total_price'] ?? null,
+                'has_security' => ! empty($in['has_security']) ? 1 : 0,
+            ]);
+            // Replace the plaintext with non-informative sealed placeholders —
+            // the real values exist only inside the encrypted bid_seals row.
+            $db->table('submissions')->where('id', $id)->update([
+                'bidder_name' => '(sealed)', 'total_price' => 0, 'has_security' => 0, 'cipher_path' => 'sealed',
+            ]);
+        }
 
         return $this->ok([
             'id' => (int) $id, 'reference' => $ref, 'received_at' => date('c'),

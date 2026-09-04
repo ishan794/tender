@@ -1,9 +1,6 @@
 import type { Metadata } from "next";
 import { Plus_Jakarta_Sans, Barlow_Condensed } from "next/font/google";
 import "./globals.css";
-import Navbar from "@/components/layout/Navbar";
-import Footer from "@/components/layout/Footer";
-import WebLoader from "@/components/layout/WebLoader";
 import { ToastProvider } from "@/components/ui/Toaster";
 import { LanguageProvider } from "@/context/LanguageContext";
 
@@ -41,13 +38,15 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning className={`${barlowCondensed.variable} ${plusJakartaSans.variable}`}>
       <body suppressHydrationWarning className="antialiased min-h-screen flex flex-col bg-white text-[#111827]">
+        {/*
+          Navbar and Footer are NOT rendered here. They belong to the marketing
+          site and now live in (public)/layout.tsx. Rendering them at the root
+          put the public header and footer inside every portal, console and
+          workspace page — two stacked headers with two brand lockups above the
+          admin tables, and the marketing footer below them.
+        */}
         <ToastProvider>
-          <LanguageProvider>
-            <WebLoader />
-            <Navbar />
-            <main className="flex-grow">{children}</main>
-            <Footer />
-          </LanguageProvider>
+          <LanguageProvider>{children}</LanguageProvider>
         </ToastProvider>
       </body>
     </html>

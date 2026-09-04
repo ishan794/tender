@@ -137,6 +137,9 @@ class TenderController extends WorkspaceBase
         }
 
         $this->advance($id, 1, ['submitted_by' => (int) $this->request->userId]);
+        service('eventLedger')->record('procurement', $id, 'tender.submitted', 'Submitted for approval', [
+            'reference' => $proc['reference'] ?? null,
+        ]);
 
         return $this->ok(['stage' => self::STAGES[1]]);
     }
@@ -172,6 +175,9 @@ class TenderController extends WorkspaceBase
         }
 
         $this->advance($id, 1, ['approved_by' => $me, 'approved_at' => date('Y-m-d H:i:s')]);
+        service('eventLedger')->record('procurement', $id, 'tender.approved', 'Approved', [
+            'reference' => $proc['reference'] ?? null, 'value' => $value,
+        ]);
 
         return $this->ok(['approved_by' => $me, 'approved_at' => date('c'), 'stage' => self::STAGES[1]], [
             'note' => 'Approved. Publishing is a separate, deliberate act.',
@@ -200,6 +206,9 @@ class TenderController extends WorkspaceBase
             'status' => 'published', 'published_at' => date('Y-m-d H:i:s'),
         ]);
         $this->advance($id, 2, ['published_by' => (int) $this->request->userId, 'published_at' => date('Y-m-d H:i:s')]);
+        service('eventLedger')->record('procurement', $id, 'tender.published', 'Published to the public catalogue', [
+            'reference' => $proc['reference'] ?? null,
+        ]);
 
         return $this->ok(['stage' => self::STAGES[2], 'published_at' => date('c')]);
     }

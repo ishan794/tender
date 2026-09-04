@@ -48,6 +48,18 @@ class FileController extends BaseApiController
         // before it reaches a header.
         $name = preg_replace('/[^A-Za-z0-9._ -]/', '_', (string) $doc['name']);
 
+        // Download logging — who pulled which document, for the audit trail.
+        try {
+            db_connect()->table('document_downloads')->insert([
+                'notice_document_id' => (int) $doc['id'],
+                'user_id' => isset($this->request->userId) ? (int) $this->request->userId : null,
+                'ip' => $this->request->getIPAddress(),
+                'created_at' => date('Y-m-d H:i:s'),
+            ]);
+        } catch (\Throwable $e) {
+            log_message('error', 'download log failed: ' . $e->getMessage());
+        }
+
         return $this->response
             ->setStatusCode(200)
             ->setContentType($doc['mime'] ?: 'application/octet-stream')

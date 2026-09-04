@@ -34,3 +34,13 @@ Thumbs.db
 # TypeScript / Cache
 *.tsbuildinfo
 .turbo/
+
+# Databases — never commit. These carried real bcrypt password hashes and PII.
+*.sqlite
+*.sqlite3
+*.db
+apps/api/writable/*.sqlite
+
+# Local document blob store
+apps/api/writable/documents/
+apps/api/writable/uploads/

@@ -12,18 +12,67 @@ import type { Submission } from "@/lib/types";
 
 const STAGES = ["Draft", "Approval", "Published", "Closed", "Opened", "Evaluation", "Award"];
 
+/** Friendly labels for ledger event types. Unknown types fall back to the raw key. */
+const LEDGER_LABELS: Record<string, string> = {
+  "tender.submitted": "Submitted for approval",
+  "tender.approved": "Approved",
+  "tender.published": "Published",
+  "addendum.issued": "Addendum issued",
+  "opening.started": "Opening started",
+  "opening.countersigned": "Opening countersigned",
+  "award.created": "Awarded",
+};
+
+/** Complaint status → label, badge tone, and the transitions available from it. */
+const CMP_LABEL: Record<string, string> = {
+  submitted: "Submitted", acknowledged: "Acknowledged", under_review: "Under review",
+  response_requested: "Response requested", decision: "Decided", appeal: "Under appeal", closed: "Closed",
+};
+const CMP_TONE: Record<string, "neutral" | "brand" | "ok" | "warn" | "bad"> = {
+  submitted: "warn", acknowledged: "brand", under_review: "brand",
+  response_requested: "warn", decision: "neutral", appeal: "warn", closed: "neutral",
+};
+const CMP_ACTIONS: Record<string, { key: string; label: string; msg?: string }[]> = {
+  submitted: [{ key: "acknowledge", label: "Acknowledge", msg: "Acknowledged." }],
+  acknowledged: [{ key: "review", label: "Start review", msg: "Under review." }],
+  under_review: [{ key: "request_response", label: "Request response", msg: "Response requested." }, { key: "decide", label: "Record decision…" }],
+  response_requested: [{ key: "decide", label: "Record decision…" }],
+  appeal: [{ key: "decide", label: "Record decision…" }, { key: "close", label: "Close", msg: "Closed." }],
+  decision: [{ key: "close", label: "Close", msg: "Closed." }],
+  closed: [],
+};
+
 export function TenderWorkspace(p: {
   proc: any; me: number; opened: boolean; submissions: Submission[];
   withheld: string[]; withheldReason: string; opensAt: string | null;
   documents: any[]; clarifications: any[]; addenda: any[];
   purchasers: any[]; purchaseMeta: any; award: any; awardMeta: any;
+  ledger: any[]; ledgerIntegrity: { ok: boolean; count: number; broken_at: number | null } | null;
+  complaints: any[];
 }) {
   const router = useRouter();
   const [tab, setTab] = useState("overview");
   const [toast, setToast] = useState<{ m: string; t: "ok" | "bad" } | null>(null);
   const [confirm, setConfirm] = useState<null | { title: string; body: string; run: () => void }>(null);
   const [addendumOpen, setAddendumOpen] = useState(false);
+  const [deciding, setDeciding] = useState<number | null>(null);
   const id = p.proc.id;
+
+  // Complaint transitions go to /authority/complaints/:id, not under this tender.
+  async function actComplaint(cid: number, action: string, extra?: any, okMsg?: string) {
+    const res = await fetch(`/api/workspace/authority/complaints/${cid}/transition`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action, ...(extra ?? {}) }),
+    });
+    const json = await res.json();
+    if (!res.ok) {
+      setToast({ m: json.detail ?? "That action is not allowed right now.", t: "bad" });
+      return false;
+    }
+    setToast({ m: okMsg ?? "Done.", t: "ok" });
+    router.refresh();
+    return true;
+  }
 
   async function act(path: string, body?: any, okMsg?: string) {
     const res = await fetch(`/api/workspace/authority/tenders/${id}${path}`, {
@@ -267,6 +316,117 @@ export function TenderWorkspace(p: {
             />
           )
         ) : null}
+      </Card>
+
+      <Card className="mt-6">
+        <CardHead
+          title="Challenges"
+          sub="Formal complaints against this tender. Every step is recorded in the ledger, and a challenge can never be deleted."
+        />
+        <CardBody>
+          {p.complaints.length ? (
+            <div className="space-y-3">
+              {p.complaints.map((c) => (
+                <div key={c.id} className="rounded-[10px] border border-ink-200 p-3.5">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-mono text-[12px] text-ink-500">{c.reference}</span>
+                    <Badge tone={CMP_TONE[c.status] ?? "neutral"}>{CMP_LABEL[c.status] ?? c.status}</Badge>
+                    {c.decision ? (
+                      <Badge tone={c.decision === "upheld" ? "ok" : c.decision === "rejected" ? "bad" : "warn"}>{c.decision}</Badge>
+                    ) : null}
+                  </div>
+                  <p className="mt-2 text-[13px] leading-relaxed text-ink-700">{c.grounds}</p>
+                  <div className="mt-1 text-[11px] text-ink-400">
+                    Filed by {c.complainant_name ?? "a bidder"}
+                    {c.response_deadline ? ` · response due ${dateTime(c.response_deadline)}` : ""}
+                    {c.decision_reason ? ` · reason: ${c.decision_reason}` : ""}
+                  </div>
+                  {(CMP_ACTIONS[c.status] ?? []).length ? (
+                    <div className="mt-2.5 flex flex-wrap gap-2">
+                      {(CMP_ACTIONS[c.status] ?? []).map((a) =>
+                        a.key === "decide" ? (
+                          <Button key="decide" variant="secondary" onClick={() => setDeciding(deciding === c.id ? null : c.id)}>
+                            Record decision…
+                          </Button>
+                        ) : (
+                          <Button key={a.key} variant="secondary" onClick={() => actComplaint(c.id, a.key, undefined, a.msg)}>
+                            {a.label}
+                          </Button>
+                        ),
+                      )}
+                    </div>
+                  ) : null}
+                  {deciding === c.id ? (
+                    <form
+                      onSubmit={async (e) => {
+                        e.preventDefault();
+                        const f = Object.fromEntries(new FormData(e.currentTarget as HTMLFormElement).entries()) as any;
+                        const ok = await actComplaint(c.id, "decide", { decision: f.decision, decision_reason: f.decision_reason }, "Decision recorded.");
+                        if (ok) setDeciding(null);
+                      }}
+                      className="mt-3 space-y-2 rounded-[8px] bg-ink-50 p-3"
+                    >
+                      <select name="decision" required className="h-[34px] w-full rounded-[8px] border border-ink-300 px-2 text-[13px]">
+                        <option value="">Decision…</option>
+                        <option value="upheld">Upheld</option>
+                        <option value="rejected">Rejected</option>
+                        <option value="partial">Partially upheld</option>
+                      </select>
+                      <textarea name="decision_reason" rows={2} required placeholder="Reason — the complainant reads this verbatim"
+                        className="w-full rounded-[8px] border border-ink-300 p-2 text-[13px]" />
+                      <div className="flex gap-2">
+                        <Button type="submit">Record decision</Button>
+                        <Button type="button" variant="secondary" onClick={() => setDeciding(null)}>Cancel</Button>
+                      </div>
+                    </form>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <EmptyState title="No challenges" help="A bidder can formally challenge this tender; any challenge appears here for review." />
+          )}
+        </CardBody>
+      </Card>
+
+      <Card className="mt-6">
+        <CardHead
+          title="Procurement event ledger"
+          sub="Append-only and hash-chained — every material action is recorded and cannot be edited after the fact."
+          right={
+            p.ledgerIntegrity ? (
+              <Badge tone={p.ledgerIntegrity.ok ? "ok" : "bad"} mono>
+                {p.ledgerIntegrity.ok ? "Integrity verified" : "Tampering detected"}
+              </Badge>
+            ) : null
+          }
+        />
+        <CardBody>
+          {p.ledger.length ? (
+            <ol className="relative ml-2 border-l border-ink-200">
+              {p.ledger.map((e) => (
+                <li key={e.id} className="mb-4 ml-4 last:mb-0">
+                  <span className="absolute -left-[5px] mt-1.5 h-2.5 w-2.5 rounded-full bg-brand-500 ring-2 ring-white" aria-hidden />
+                  <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                    <span className="text-[13px] font-medium text-ink-900">{LEDGER_LABELS[e.event_type] ?? e.event_type}</span>
+                    <span className="font-mono text-[11px] text-ink-400">{dateTime(e.created_at)}</span>
+                  </div>
+                  <div className="text-[12px] text-ink-500">
+                    {e.summary ? <span>{e.summary} · </span> : null}
+                    {e.actor_name
+                      ? <span>{e.actor_name}{e.actor_role ? ` (${e.actor_role})` : ""}</span>
+                      : <span className="italic">system</span>}
+                  </div>
+                </li>
+              ))}
+            </ol>
+          ) : (
+            <EmptyState
+              title="No recorded events yet"
+              help="Events appear here as the tender is submitted, approved, published, opened and awarded."
+            />
+          )}
+        </CardBody>
       </Card>
 
       <Modal open={addendumOpen} onClose={() => setAddendumOpen(false)} title="Issue an addendum" width={540}

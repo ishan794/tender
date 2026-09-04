@@ -14,15 +14,29 @@ mkdir -p "${BACKUP_DIR}"
 
 DB_NAME="${DB_NAME:-tenderhub_prod}"
 DB_USER="${DB_USER:-tenderhub_user}"
-DB_PASS="${DB_PASS:-tenderhub_pass_2026}"
 DB_HOST="${DB_HOST:-127.0.0.1}"
 
+# The password is REQUIRED and never defaulted — a committed default is a
+# published credential. Fail loudly if it is not supplied.
+: "${DB_PASS:?DB_PASS must be set (do not hardcode a default)}"
+
 BACKUP_FILE="${BACKUP_DIR}/${DB_NAME}_${TIMESTAMP}.sql.gz"
+
+# Pass credentials via a temp defaults-file rather than -p on the command line,
+# so the password is not visible in `ps`/process listings. Cleaned up on exit.
+MYSQL_CNF="$(mktemp)"
+trap 'rm -f "${MYSQL_CNF}"' EXIT
+cat > "${MYSQL_CNF}" <<EOF
+[client]
+user=${DB_USER}
+password=${DB_PASS}
+host=${DB_HOST}
+EOF
 
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] Starting MySQL 8 backup for database: ${DB_NAME}..."
 
 # Execute mysqldump with single transaction to avoid locking tables
-mysqldump -h "${DB_HOST}" -u "${DB_USER}" -p"${DB_PASS}" \
+mysqldump --defaults-extra-file="${MYSQL_CNF}" \
     --single-transaction \
     --quick \
     --routines \

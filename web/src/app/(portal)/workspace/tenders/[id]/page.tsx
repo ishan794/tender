@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { authed } from "@/lib/api";
 import { readSession } from "@/lib/session";
 import { TenderWorkspace } from "@/components/portal/tender-workspace";
+import { PerTenderPanels } from "@/components/portal/per-tender-panels";
 import type { Submission } from "@/lib/types";
 
 export const metadata = { title: "Tender workspace" };
@@ -14,13 +15,17 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
   const proc = res.body?.data;
   const session = await readSession();
 
-  const [subsRes, docsRes, clarRes, addRes, purchRes, awardRes] = await Promise.all([
+  const [subsRes, docsRes, clarRes, addRes, purchRes, awardRes, ledgerRes, complaintsRes, sigRes, tcoRes] = await Promise.all([
     authed(`/api/v1/authority/tenders/${id}/submissions`),
     authed(`/api/v1/authority/tenders/${id}/documents`),
     authed(`/api/v1/authority/tenders/${id}/clarifications`),
     authed(`/api/v1/authority/tenders/${id}/addenda`),
     authed(`/api/v1/authority/tenders/${id}/purchasers`),
     authed(`/api/v1/authority/tenders/${id}/award`),
+    authed(`/api/v1/authority/tenders/${id}/ledger`),
+    authed(`/api/v1/authority/tenders/${id}/complaints`),
+    authed(`/api/v1/authority/tenders/${id}/signatures`),
+    authed(`/api/v1/authority/tenders/${id}/tco`),
   ]);
 
   const opened = subsRes.body?.meta?.opened === true;
@@ -47,21 +52,33 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
       }));
 
   return (
-    <TenderWorkspace
-      proc={proc}
-      me={session!.user.id}
-      opened={opened}
-      submissions={submissions}
-      withheld={subsRes.body?.meta?.withheld ?? []}
-      withheldReason={subsRes.body?.meta?.withheld_reason ?? ""}
-      opensAt={subsRes.body?.meta?.opens_at ?? null}
-      documents={docsRes.body?.data ?? []}
-      clarifications={clarRes.body?.data ?? []}
-      addenda={addRes.body?.data ?? []}
-      purchasers={purchRes.body?.data ?? []}
-      purchaseMeta={purchRes.body?.meta ?? {}}
-      award={awardRes.body?.data ?? null}
-      awardMeta={awardRes.body?.meta ?? {}}
-    />
+    <>
+      <TenderWorkspace
+        proc={proc}
+        me={session!.user.id}
+        opened={opened}
+        submissions={submissions}
+        withheld={subsRes.body?.meta?.withheld ?? []}
+        withheldReason={subsRes.body?.meta?.withheld_reason ?? ""}
+        opensAt={subsRes.body?.meta?.opens_at ?? null}
+        documents={docsRes.body?.data ?? []}
+        clarifications={clarRes.body?.data ?? []}
+        addenda={addRes.body?.data ?? []}
+        purchasers={purchRes.body?.data ?? []}
+        purchaseMeta={purchRes.body?.meta ?? {}}
+        award={awardRes.body?.data ?? null}
+        awardMeta={awardRes.body?.meta ?? {}}
+        ledger={ledgerRes.body?.data ?? []}
+        ledgerIntegrity={ledgerRes.body?.meta?.integrity ?? null}
+        complaints={complaintsRes.body?.data ?? []}
+      />
+      <PerTenderPanels
+        id={Number(id)}
+        canSign={session!.user.role !== "viewer"}
+        estimatedValue={Number(proc?.estimated_value ?? 0)}
+        signatures={sigRes.body?.data ?? []}
+        tco={(tcoRes.body?.data ?? [])[0] ?? null}
+      />
+    </>
   );
 }

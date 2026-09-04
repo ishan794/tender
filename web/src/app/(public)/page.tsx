@@ -460,6 +460,7 @@ export default function HomePage() {
                 <input
                   ref={searchInputRef}
                   type="text"
+                  aria-label={t("searchPlaceholder")}
                   placeholder={language === "en" ? (displayedPlaceholder || t("searchPlaceholder")) : t("searchPlaceholder")}
                   value={keyword}
                   onFocus={() => setIsSearchFocused(true)}
@@ -793,9 +794,9 @@ export default function HomePage() {
             <span className="text-[10px] uppercase font-black tracking-widest text-blue-300 block mb-1.5">
               {t("forProcuringBodiesBadge")}
             </span>
-            <h4 className="text-sm font-black leading-tight mb-1.5 text-white">
+            <h2 className="text-sm font-black leading-tight mb-1.5 text-white">
               {t("publishFreeTitle")}
-            </h4>
+            </h2>
             <p className="text-xs text-slate-300 mb-4 font-normal leading-relaxed">
               {t("publishFreeSubtitle")}
             </p>
@@ -1249,9 +1250,9 @@ export default function HomePage() {
             <div className="flex flex-wrap items-center justify-between gap-4 pb-5 border-b border-slate-200">
               
               <div className="flex items-baseline gap-2 xs:gap-3 min-w-0 flex-1">
-                <h3 className="text-lg xs:text-xl sm:text-2xl font-black text-[#0F172A] tracking-tight truncate">
+                <h2 className="text-lg xs:text-xl sm:text-2xl font-black text-[#0F172A] tracking-tight truncate">
                   {t("resultsHeaderTitle")} ({filteredTenders.length})
-                </h3>
+                </h2>
                 <span className="text-xs text-slate-500 font-medium hidden lg:inline truncate">
                   {t("resultsHeaderSubtitle")}
                 </span>
@@ -1356,6 +1357,7 @@ export default function HomePage() {
                           <button
                             type="button"
                             onClick={(e) => toggleBookmark(e, tender.id)}
+                            aria-label={isSaved ? "Remove from watchlist" : "Save to watchlist"}
                             title={isSaved ? "Remove from watchlist" : "Save to watchlist"}
                             className="p-2 xs:p-1.5 rounded-lg bg-[#F1F5F9] hover:bg-white border border-[#E2E8F0] text-slate-400 hover:text-[#0055B8] transition-all hover:scale-110 active:scale-90 shadow-2xs cursor-pointer min-h-[36px] min-w-[36px] xs:min-h-0 xs:min-w-0 flex items-center justify-center shrink-0"
                           >
@@ -1372,9 +1374,9 @@ export default function HomePage() {
                       </div>
 
                       {/* Main Title */}
-                      <h4 className="text-[15px] sm:text-base font-extrabold text-[#0F172A] leading-snug mb-3 group-hover:text-[#0055B8] transition-colors line-clamp-2">
+                      <h3 className="text-[15px] sm:text-base font-extrabold text-[#0F172A] leading-snug mb-3 group-hover:text-[#0055B8] transition-colors line-clamp-2">
                         {tender.title}
-                      </h4>
+                      </h3>
 
                       {/* Organization - Login gated */}
                       <div className="text-xs font-bold text-[#0055B8] mb-3 flex items-center gap-2">
@@ -1522,6 +1524,7 @@ export default function HomePage() {
                               <button
                                 type="button"
                                 onClick={(e) => toggleBookmark(e, tender.id)}
+                                aria-label={isSaved ? "Remove from watchlist" : "Save to watchlist"}
                                 title={isSaved ? "Remove from watchlist" : "Save to watchlist"}
                                 className="p-2 rounded-xl bg-[#F1F5F9] hover:bg-white border border-[#E2E8F0] text-slate-400 hover:text-[#0055B8] transition-all hover:scale-105 active:scale-95 shadow-2xs cursor-pointer"
                               >

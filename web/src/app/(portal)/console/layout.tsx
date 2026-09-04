@@ -12,7 +12,11 @@ export default async function ConsoleLayout({ children }: { children: React.Reac
         { href: "/console", label: "System health" },
         { href: "/console/ingestion", label: "Ingestion" },
         { href: "/console/organisations", label: "Organisations" },
+        { href: "/console/kyc", label: "Verification" },
         { href: "/console/payments", label: "Payments" },
+        { href: "/console/risk", label: "Risk signals" },
+        { href: "/console/security", label: "Security" },
+        { href: "/console/legal-holds", label: "Legal holds" },
       ]}>
       {children}
     </PortalShell>

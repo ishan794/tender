@@ -69,6 +69,8 @@ class AuthController extends BaseApiController
         $deny = static fn () => problem(401, 'invalid_credentials', 'E-mail or password is incorrect.');
 
         if (! $user || ! $user['password_hash'] || ! password_verify((string) ($in['password'] ?? ''), $user['password_hash'])) {
+            \App\Libraries\Monitoring\SecurityMonitor::record('auth_failure', 'warning', $user['id'] ?? null,
+                'failed login for ' . substr((string) ($in['email'] ?? ''), 0, 120));
             return $deny();
         }
         if ($user['status'] !== 'active') {

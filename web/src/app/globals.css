@@ -169,9 +169,15 @@ img, video, iframe, svg {
   height: auto;
 }
 
-/* Ensure all containers respect viewport */
-* {
-  min-width: 0;
+/* Let flex/grid children shrink below their content size (overflow guard).
+   This MUST live in @layer base: an unlayered `* { min-width: 0 }` beats every
+   layered Tailwind min-w-* utility, which silently defeated intentional minimum
+   widths app-wide (e.g. 44px touch targets collapsing to content width). Inside
+   @layer base it still applies wherever no min-w utility is set. */
+@layer base {
+  * {
+    min-width: 0;
+  }
 }
 
 /* Focus visible for keyboard navigation (all devices) */

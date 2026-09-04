@@ -69,6 +69,10 @@ class AwardController extends WorkspaceBase
         $this->advance($id, 6);
         $db->transCommit();
 
+        service('eventLedger')->record('procurement', $id, 'award.created', 'Contract awarded', [
+            'committee_ref' => $ref, 'amount' => (float) $sub['total_price'], 'standstill_until' => $until,
+        ]);
+
         return $this->ok([
             'supplier' => $sub['bidder_name'], 'amount' => (float) $sub['total_price'],
             'committee_ref' => $ref, 'awarded_at' => date('c'), 'standstill_until' => $until,

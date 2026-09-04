@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -11,6 +11,9 @@ export default function Navbar() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   // mounted: still needed for createPortal (document.body must exist)
   const [mounted, setMounted] = useState(false);
+  // Drawer accessibility: remember what opened it, and where to trap focus.
+  const drawerRef = useRef<HTMLDivElement>(null);
+  const openerRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     setMounted(true);
@@ -30,6 +33,56 @@ export default function Navbar() {
     }
     return () => {
       document.body.style.overflow = "";
+    };
+  }, [isMobileMenuOpen]);
+
+  /**
+   * Modal-dialog accessibility for the drawer: Escape closes it, Tab is trapped
+   * inside it, focus moves in on open and is restored to the trigger on close.
+   * Without this, keyboard and screen-reader users tabbed straight past the
+   * open drawer into the page behind it with no way to dismiss it.
+   */
+  useEffect(() => {
+    if (!isMobileMenuOpen) return;
+
+    const panel = drawerRef.current;
+    // Move focus into the drawer.
+    const focusables = () =>
+      panel
+        ? Array.from(
+            panel.querySelectorAll<HTMLElement>(
+              'a[href], button:not([disabled]), input, [tabindex]:not([tabindex="-1"])',
+            ),
+          ).filter((el) => el.offsetParent !== null)
+        : [];
+    focusables()[0]?.focus();
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setIsMobileMenuOpen(false);
+        return;
+      }
+      if (e.key === "Tab") {
+        const items = focusables();
+        if (items.length === 0) return;
+        const first = items[0];
+        const last = items[items.length - 1];
+        if (e.shiftKey && document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
+    };
+
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      // Restore focus to the hamburger that opened the drawer.
+      openerRef.current?.focus();
     };
   }, [isMobileMenuOpen]);
 
@@ -116,7 +169,7 @@ export default function Navbar() {
               type="button"
               onClick={() => setLanguage("en")}
               aria-label="Switch to English"
-              className={`px-1.5 xs:px-2 sm:px-2.5 py-1 sm:py-1 text-[11px] sm:text-xs rounded-md sm:rounded-lg font-black transition-all cursor-pointer min-h-[28px] sm:min-h-0 min-w-[32px] xs:min-w-[36px] sm:min-w-0 flex items-center justify-center ${
+              className={`px-2 sm:px-2.5 py-1.5 sm:py-1 text-[11px] sm:text-xs rounded-md sm:rounded-lg font-black transition-all cursor-pointer min-h-[36px] min-w-[36px] sm:min-h-0 sm:min-w-0 flex items-center justify-center ${
                 hydrated && language === "en" ? "bg-white text-[#0055B8] shadow-xs" : "text-gray-600 hover:text-black font-bold"
               }`}
             >
@@ -126,7 +179,7 @@ export default function Navbar() {
               type="button"
               onClick={() => setLanguage("si")}
               aria-label="Switch to Sinhala"
-              className={`px-1.5 xs:px-2 sm:px-2.5 py-1 sm:py-1 text-[11px] sm:text-xs rounded-md sm:rounded-lg font-black transition-all cursor-pointer min-h-[28px] sm:min-h-0 min-w-[32px] xs:min-w-[36px] sm:min-w-0 flex items-center justify-center ${
+              className={`px-2 sm:px-2.5 py-1.5 sm:py-1 text-[11px] sm:text-xs rounded-md sm:rounded-lg font-black transition-all cursor-pointer min-h-[36px] min-w-[36px] sm:min-h-0 sm:min-w-0 flex items-center justify-center ${
                 hydrated && language === "si" ? "bg-white text-[#0055B8] shadow-xs" : "text-gray-600 hover:text-black font-bold"
               }`}
             >
@@ -136,7 +189,7 @@ export default function Navbar() {
               type="button"
               onClick={() => setLanguage("ta")}
               aria-label="Switch to Tamil"
-              className={`px-1.5 xs:px-2 sm:px-2.5 py-1 sm:py-1 text-[11px] sm:text-xs rounded-md sm:rounded-lg font-black transition-all cursor-pointer min-h-[28px] sm:min-h-0 min-w-[32px] xs:min-w-[36px] sm:min-w-0 flex items-center justify-center ${
+              className={`px-2 sm:px-2.5 py-1.5 sm:py-1 text-[11px] sm:text-xs rounded-md sm:rounded-lg font-black transition-all cursor-pointer min-h-[36px] min-w-[36px] sm:min-h-0 sm:min-w-0 flex items-center justify-center ${
                 hydrated && language === "ta" ? "bg-white text-[#0055B8] shadow-xs" : "text-gray-600 hover:text-black font-bold"
               }`}
             >
@@ -175,10 +228,13 @@ export default function Navbar() {
 
           {/* Mobile & Tablet Menu Hamburger Toggle (xl:hidden) - 44px touch target */}
           <button
+            ref={openerRef}
             type="button"
             onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
             aria-label="Toggle Navigation Menu"
             aria-expanded={isMobileMenuOpen}
+            aria-haspopup="dialog"
+            aria-controls="mobile-nav-drawer"
             className="xl:hidden p-2.5 sm:p-2 rounded-xl bg-slate-100 hover:bg-slate-200 active:bg-slate-300 text-slate-700 transition-all cursor-pointer min-h-[44px] min-w-[44px] flex items-center justify-center shrink-0"
           >
             {isMobileMenuOpen ? (
@@ -207,7 +263,14 @@ export default function Navbar() {
           />
 
           {/* Off-canvas Side Drawer Panel (Slide from Right, 100dvh full height) */}
-          <div className="relative w-full max-w-[85vw] sm:max-w-sm h-[100dvh] max-h-[100dvh] bg-white shadow-2xl flex flex-col z-[100000] animate-slideLeft pb-[env(safe-area-inset-bottom,0px)]">
+          <div
+            ref={drawerRef}
+            id="mobile-nav-drawer"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Navigation menu"
+            className="relative w-full max-w-[85vw] sm:max-w-sm h-[100dvh] max-h-[100dvh] bg-white shadow-2xl flex flex-col z-[100000] animate-slideLeft pb-[env(safe-area-inset-bottom,0px)]"
+          >
             
             {/* Side Menu Header */}
             <div className="p-4 sm:p-5 border-b border-slate-100 flex items-center justify-between bg-[#0A1633] text-white shrink-0">

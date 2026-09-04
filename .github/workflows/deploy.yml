@@ -1,67 +1,153 @@
-name: TenderHub CI/CD Pipeline
+name: TenderHub CI
+
+# Real gates. The previous "verification test suite" imported an internal mock,
+# asserted hardcoded `true`, made no HTTP requests and had no non-zero exit, so
+# it reported 100% passing while every auth bypass was live. These jobs run the
+# actual programs and fail the build when a check fails.
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
   pull_request:
-    branches: [ "main" ]
+    branches: ["main"]
 
 jobs:
-  # 1. Test & Build Frontend
-  test-and-build-frontend:
+  # --- 1. Web: lint, typecheck, build, real security smoke -----------------
+  web:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Setup Node.js 22
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: 'npm'
-          cache-dependency-path: './package-lock.json'
+          cache: "npm"
+          cache-dependency-path: "./package-lock.json"
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Run verification test suite
-        run: npm run test:phases --workspace=web
+      - name: Lint (informational)
+        # Non-blocking: the codebase carries ~96 pre-existing eslint errors
+        # (mostly no-explicit-any across the portal tables) that predate this
+        # remediation. Tracked as a separate code-quality cleanup rather than a
+        # deploy blocker. Typecheck, build and the security smoke below ARE hard
+        # gates.
+        run: npm run lint --workspace=web
+        continue-on-error: true
 
-      - name: Build Next.js 16 Web application
-        run: cd web && npm run build
+      - name: Typecheck
+        run: npm run typecheck --workspace=web
+
+      - name: Build
+        run: npm run build --workspace=web
         env:
           NODE_OPTIONS: "--max-old-space-size=4096"
           NEXT_TELEMETRY_DISABLED: 1
 
-  # 2. Production Docker Build Check
-  docker-build-verification:
-    needs: test-and-build-frontend
+      - name: Security smoke (auth / RBAC / fail-closed, real HTTP)
+        # Spawns the built server with an unreachable API and asserts the
+        # fail-closed + authorisation matrix. Exits non-zero on any violation.
+        run: node scripts/security-smoke.mjs
+        working-directory: web
+
+  # --- 2. API: PHP unit + integration tests --------------------------------
+  api:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PHP 8.3
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.3"
+          extensions: intl, mbstring, sqlite3, pdo_sqlite, gd, zip
+          coverage: none
+
+      - name: Install dependencies
+        run: composer install --no-interaction --prefer-dist
+        working-directory: apps/api
+
+      - name: PHPUnit
+        run: vendor/bin/phpunit
+        working-directory: apps/api
+
+  # --- 3. Docker images + compose config validate --------------------------
+  docker:
+    needs: [web, api]
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main'
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
 
-      - name: Set up Docker Buildx
-        uses: actions/setup-buildx-action@v3
+      - name: Validate compose config
+        # Dummy values only satisfy the `${VAR:?}` required-secret checks so the
+        # config can be parsed; nothing is deployed with them.
+        run: docker compose -f docker-compose.prod.yml config >/dev/null
+        env:
+          MYSQL_ROOT_PASSWORD: ci
+          MYSQL_DATABASE: ci
+          MYSQL_USER: ci
+          MYSQL_PASSWORD: ci
+          APP_BASE_URL: https://example.test
+          JWT_SECRET: ci_dummy_secret_at_least_32_characters_long
+          FILES_SIGNING_KEY: ci_dummy_secret_at_least_32_characters_long
+          SESSION_SECRET: ci_dummy_secret_at_least_32_characters_long
+          INGEST_SECRET_KEY: ci_dummy
 
-      - name: Validate Docker Compose Configuration
-        run: docker compose -f docker-compose.prod.yml config
-
-      - name: Build CodeIgniter 4 API Image
+      - name: Build API image
         uses: docker/build-push-action@v5
         with:
           context: ./apps/api
           file: ./apps/api/Dockerfile
           push: false
-          tags: tenderhub-api:latest
+          tags: tenderhub-api:ci
 
-      - name: Build Next.js Web Image
+      - name: Build web image
         uses: docker/build-push-action@v5
         with:
           context: ./web
           file: ./web/Dockerfile
           push: false
-          tags: tenderhub-web:latest
+          tags: tenderhub-web:ci
+
+  # --- 4. Deploy (opt-in) --------------------------------------------------
+  # Disabled until you configure it: set repository variable DEPLOY_ENABLED=true
+  # and the secrets referenced below. Left as a real, safe scaffold rather than
+  # a fake step that claims to deploy. It pulls, migrates, health-checks, and
+  # rolls back the compose stack on failure.
+  deploy:
+    needs: [docker]
+    runs-on: ubuntu-latest
+    if: ${{ github.ref == 'refs/heads/main' && vars.DEPLOY_ENABLED == 'true' }}
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: |
+            set -euo pipefail
+            cd /opt/tenderhub
+            git fetch --all
+            PREV=$(git rev-parse HEAD)
+            git reset --hard origin/main
+            docker compose -f docker-compose.prod.yml pull
+            docker compose -f docker-compose.prod.yml up -d --build
+            # DB migrations (idempotent).
+            docker compose -f docker-compose.prod.yml exec -T api php spark migrate --all
+            # Health gate with rollback.
+            for i in $(seq 1 20); do
+              if curl -fsS https://tenderhub.lk/api/health >/dev/null; then echo "healthy"; exit 0; fi
+              sleep 5
+            done
+            echo "health check failed — rolling back to ${PREV}"
+            git reset --hard "${PREV}"
+            docker compose -f docker-compose.prod.yml up -d --build
+            exit 1

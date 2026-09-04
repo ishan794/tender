@@ -19,14 +19,36 @@ use CodeIgniter\Config\BaseService;
  */
 class Services extends BaseService
 {
-    /*
-     * public static function example($getShared = true)
-     * {
-     *     if ($getShared) {
-     *         return static::getSharedInstance('example');
-     *     }
-     *
-     *     return new \CodeIgniter\Example();
-     * }
+    /**
+     * Append-only Procurement Event Ledger. Shared so every controller writes
+     * to the same instance/connection within a request.
      */
+    public static function eventLedger($getShared = true): \App\Libraries\Audit\EventLedger
+    {
+        if ($getShared) {
+            return static::getSharedInstance('eventLedger');
+        }
+
+        return new \App\Libraries\Audit\EventLedger();
+    }
+
+    /** Application-level digital signing (HMAC attestation). */
+    public static function signing($getShared = true): \App\Libraries\Signing\SigningService
+    {
+        if ($getShared) {
+            return static::getSharedInstance('signing');
+        }
+
+        return new \App\Libraries\Signing\SigningService();
+    }
+
+    /** Sealed-bid envelope encryption. */
+    public static function crypto($getShared = true): \App\Libraries\Security\CryptoService
+    {
+        if ($getShared) {
+            return static::getSharedInstance('crypto');
+        }
+
+        return new \App\Libraries\Security\CryptoService();
+    }
 }

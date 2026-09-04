@@ -58,6 +58,7 @@ class OpeningController extends WorkspaceBase
             'stage_idx' => 3,
             'updated_at' => date('Y-m-d H:i:s'),
         ]);
+        service('eventLedger')->record('procurement', $id, 'opening.started', 'Opening ceremony started (officer A)');
 
         return $this->ok(['started_by' => (int) $this->request->userId, 'started_at' => date('c')], [
             'next' => 'A DIFFERENT officer must countersign before any bid can be read.',
@@ -99,6 +100,23 @@ class OpeningController extends WorkspaceBase
         ]);
         $db->table('submissions')->where('procurement_id', $id)->update(['status' => 'opened']);
         $db->transCommit();
+
+        service('eventLedger')->record('procurement', $id, 'opening.countersigned', 'Opening countersigned by a second officer — bids readable', [
+            'opened_by' => [(int) $proc['opened_by_a'], $me],
+        ]);
+
+        // Dual control has completed: NOW decrypt the sealed bids and write the
+        // readable values back. Before this point the plaintext did not exist in
+        // the database at all. Legacy (unsealed) rows are left untouched.
+        foreach (service('crypto')->unsealAll($id) as $subId => $data) {
+            if ($data) {
+                $db->table('submissions')->where('id', $subId)->update([
+                    'bidder_name'  => $data['bidder_name'] ?? null,
+                    'total_price'  => $data['total_price'] ?? null,
+                    'has_security' => $data['has_security'] ?? 0,
+                ]);
+            }
+        }
 
         $rows = model(SubmissionModel::class)->forProcurement($id, true);
 

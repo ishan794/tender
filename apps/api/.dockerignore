@@ -1,0 +1,15 @@
+# Never copy secrets, dev data, VCS or dependency trees into an image layer.
+.env
+.env.*
+vendor/
+writable/
+tests/
+.git
+.gitignore
+*.sqlite
+*.sqlite3
+writable/dev-partner-key.txt
+Dockerfile
+.dockerignore
+README.md
+phpunit.dist.xml

@@ -68,14 +68,50 @@ export default function RegisterPage() {
     }
 
     setIsSubmitting(true);
-    toast.success(
-      "Registration Successful",
-      `Welcome ${firstName}! Your supplier workspace for "${businessName}" is ready.`
-    );
 
-    setTimeout(() => {
-      router.push("/login?registered=true");
-    }, 1500);
+    // Real registration. This previously created no account: it showed a
+    // success toast and redirected, so the "workspace is ready" message was
+    // untrue and the person had no credentials to sign in with.
+    void (async () => {
+      try {
+        const res = await fetch("/api/auth/register", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: `${firstName.trim()} ${lastName.trim()}`.trim(),
+            org_name: businessName.trim(),
+            email: email.trim(),
+            password,
+            account_type: "bidder",
+            category: category,
+          }),
+        });
+        const json = await res.json().catch(() => null);
+
+        if (!res.ok) {
+          setIsSubmitting(false);
+          toast.error(
+            res.status === 409
+              ? "Account Already Exists"
+              : res.status === 429
+                ? "Too Many Attempts"
+                : "Registration Failed",
+            json?.detail ?? "We could not create that account. Please check your details and try again.",
+          );
+          return;
+        }
+
+        toast.success(
+          "Registration Successful",
+          `Welcome ${firstName}. Check your e-mail to verify "${businessName}".`,
+        );
+        router.push("/app");
+        router.refresh();
+      } catch {
+        setIsSubmitting(false);
+        toast.error("Service Unavailable", "Registration is temporarily unavailable. Please try again shortly.");
+      }
+    })();
   };
 
   return (
