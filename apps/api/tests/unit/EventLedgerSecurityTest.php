@@ -66,7 +66,7 @@ class EventLedgerSecurityTest extends CIUnitTestCase
 
         // 3. Create notice & procurement owned by Org A
         $this->db->table('notices')->insert([
-            'kind' => 'procurement', 'reference' => 'REF-LEDGER-' . rand(100, 999),
+            'kind' => 'tender', 'reference' => 'REF-LEDGER-' . rand(100, 999),
             'slug' => 'ledger-test-' . uniqid(), 'title' => 'Ledger Test Tender',
             'org_id' => $this->orgAId, 'closing_at' => date('Y-m-d H:i:s', time() + 86400),
             'opening_at' => date('Y-m-d H:i:s', time() + 86400), 'status' => 'draft',

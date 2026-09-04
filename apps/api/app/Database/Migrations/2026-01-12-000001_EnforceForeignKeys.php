@@ -219,7 +219,7 @@ class EnforceForeignKeys extends Migration
             'column'     => 'province_id',
             'ref_table'  => 'provinces',
             'ref_column' => 'id',
-            'on_delete'  => 'SET NULL',
+            'on_delete'  => 'RESTRICT',
         ],
         [
             'table'      => 'doc_purchases',

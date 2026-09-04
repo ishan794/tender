@@ -42,11 +42,19 @@ class ForeignKeyIntegrityTest extends CIUnitTestCase
         $tables = $this->db->listTables();
         $totalFks = 0;
 
-        foreach ($tables as $table) {
-            if ($this->db->DBDriver === 'SQLite3') {
+        if ($this->db->DBDriver === 'SQLite3') {
+            foreach ($tables as $table) {
                 $fks = $this->db->query("PRAGMA foreign_key_list('{$table}')")->getResultArray();
                 $totalFks += count($fks);
             }
+        } else {
+            $row = $this->db->query("
+                SELECT COUNT(*) AS total
+                FROM information_schema.KEY_COLUMN_USAGE
+                WHERE TABLE_SCHEMA = DATABASE()
+                  AND REFERENCED_TABLE_NAME IS NOT NULL
+            ")->getRowArray();
+            $totalFks = (int) ($row['total'] ?? 0);
         }
 
         $this->assertEquals(80, $totalFks, 'Database schema must contain exactly 80 enforced foreign key relationships.');
@@ -60,6 +68,9 @@ class ForeignKeyIntegrityTest extends CIUnitTestCase
         if ($this->db->DBDriver === 'SQLite3') {
             $violations = $this->db->query('PRAGMA foreign_key_check;')->getResultArray();
             $this->assertCount(0, $violations, 'PRAGMA foreign_key_check found integrity violations: ' . json_encode($violations));
+        } else {
+            $row = $this->db->query('SELECT @@foreign_key_checks AS fkc;')->getRowArray();
+            $this->assertEquals(1, (int) ($row['fkc'] ?? 0));
         }
     }
 

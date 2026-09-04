@@ -20,6 +20,7 @@ class PayHereWebhookHardeningTest extends CIUnitTestCase
 {
     protected $db;
     protected OrderModel $orderModel;
+    protected int $testOrgId = 0;
 
     protected const TEST_MERCHANT_ID     = '123456';
     protected const TEST_MERCHANT_SECRET = 'super_secret_test_key_xyz_789';
@@ -30,6 +31,23 @@ class PayHereWebhookHardeningTest extends CIUnitTestCase
         $this->db = \Config\Database::connect('default');
         $this->orderModel = new OrderModel();
 
+        $testOrg = $this->db->table('organisations')->where('name', 'PayHere Test Bidder Org')->get()->getFirstRow('array');
+        if (! $testOrg) {
+            $this->db->table('organisations')->insert([
+                'name'       => 'PayHere Test Bidder Org',
+                'slug'       => 'payhere-test-bidder-' . bin2hex(random_bytes(3)),
+                'type'       => 'bidder',
+                'plan'       => 'free',
+                'sub_status' => 'none',
+                'created_at' => date('Y-m-d H:i:s'),
+                'updated_at' => date('Y-m-d H:i:s'),
+            ]);
+            $this->testOrgId = (int) $this->db->insertID();
+        } else {
+            $this->testOrgId = (int) $testOrg['id'];
+            $this->db->table('organisations')->where('id', $this->testOrgId)->update(['plan' => 'free', 'sub_status' => 'none']);
+        }
+
         putenv('PAYHERE_MERCHANT_ID=' . self::TEST_MERCHANT_ID);
         putenv('PAYHERE_MERCHANT_SECRET=' . self::TEST_MERCHANT_SECRET);
     }
@@ -37,6 +55,10 @@ class PayHereWebhookHardeningTest extends CIUnitTestCase
     protected function tearDown(): void
     {
         parent::tearDown();
+        if ($this->testOrgId) {
+            $this->db->table('organisations')->where('id', $this->testOrgId)->update(['plan' => 'free', 'sub_status' => 'none']);
+        }
+        $this->db->table('organisations')->where('id', 1)->update(['plan' => 'staff']);
         putenv('PAYHERE_MERCHANT_ID');
         putenv('PAYHERE_MERCHANT_SECRET');
     }
@@ -46,7 +68,7 @@ class PayHereWebhookHardeningTest extends CIUnitTestCase
         $orderId = 'TEST-PAY-' . bin2hex(random_bytes(4));
         $id = $this->orderModel->insert([
             'order_id'   => $orderId,
-            'org_id'     => 1,
+            'org_id'     => $this->testOrgId ?: 1,
             'user_id'    => 1,
             'plan'       => 'monthly',
             'amount'     => $amount,
@@ -115,7 +137,7 @@ class PayHereWebhookHardeningTest extends CIUnitTestCase
         $this->assertSame('320025148972', $updated['transaction_id']);
 
         // Verify organization subscription was advanced
-        $org = $this->db->table('organisations')->where('id', 1)->get()->getFirstRow('array');
+        $org = $this->db->table('organisations')->where('id', $this->testOrgId)->get()->getFirstRow('array');
         $this->assertSame('business', $org['plan']);
         $this->assertSame('active', $org['sub_status']);
 
@@ -291,7 +313,7 @@ class PayHereWebhookHardeningTest extends CIUnitTestCase
         $this->assertFalse($body1['data']['idempotent']);
 
         // Record organisation renews_at timestamp
-        $org1 = $this->db->table('organisations')->where('id', 1)->get()->getFirstRow('array');
+        $org1 = $this->db->table('organisations')->where('id', $this->testOrgId)->get()->getFirstRow('array');
         $renewsAt1 = $org1['renews_at'];
 
         // Second duplicate callback -> must be idempotent
@@ -301,7 +323,7 @@ class PayHereWebhookHardeningTest extends CIUnitTestCase
         $this->assertTrue($body2['data']['idempotent'], 'Duplicate callback must be flagged as idempotent.');
 
         // renews_at must NOT be extended a second time
-        $org2 = $this->db->table('organisations')->where('id', 1)->get()->getFirstRow('array');
+        $org2 = $this->db->table('organisations')->where('id', $this->testOrgId)->get()->getFirstRow('array');
         $this->assertSame($renewsAt1, $org2['renews_at'], 'Subscription duration must not be double-extended.');
 
         // Clean up

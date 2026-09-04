@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phpunit
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
+    bootstrap="vendor/codeigniter4/framework/system/Test/bootstrap.php"
+    backupGlobals="false"
+    beStrictAboutOutputDuringTests="true"
+    colors="true"
+    columns="max"
+    failOnRisky="true"
+    failOnWarning="false"
+    cacheDirectory="build/.phpunit.cache"
+>
+    <testsuites>
+        <testsuite name="App">
+            <directory>./tests/unit</directory>
+        </testsuite>
+    </testsuites>
+
+    <source>
+        <include>
+            <directory suffix=".php">./app</directory>
+        </include>
+        <exclude>
+            <directory suffix=".php">./app/Views</directory>
+            <file>./app/Config/Routes.php</file>
+        </exclude>
+    </source>
+
+    <php>
+        <server name="app.baseURL" value="http://example.com/"/>
+        <server name="CODEIGNITER_SCREAM_DEPRECATIONS" value="0"/>
+        <const name="HOMEPATH" value="./"/>
+        <const name="CONFIGPATH" value="./app/Config/"/>
+        <const name="PUBLICPATH" value="./public/"/>
+        <!-- MySQL Database configuration -->
+        <env name="database.tests.DBDriver" value="MySQLi"/>
+        <env name="database.tests.hostname" value="127.0.0.1"/>
+        <env name="database.tests.database" value="tenderhub_test"/>
+        <env name="database.tests.username" value="tenderhub_user"/>
+        <env name="database.tests.password" value="tenderhub_pass_2026"/>
+        <env name="database.tests.port" value="3306"/>
+        <env name="database.tests.DBPrefix" value=""/>
+        <env name="database.default.DBDriver" value="MySQLi"/>
+        <env name="database.default.hostname" value="127.0.0.1"/>
+        <env name="database.default.database" value="tenderhub_test"/>
+        <env name="database.default.username" value="tenderhub_user"/>
+        <env name="database.default.password" value="tenderhub_pass_2026"/>
+        <env name="database.default.port" value="3306"/>
+        <env name="database.default.DBPrefix" value=""/>
+    </php>
+</phpunit>

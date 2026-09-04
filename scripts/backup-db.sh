@@ -38,6 +38,7 @@ echo "[$(date '+%Y-%m-%d %H:%M:%S')] Starting MySQL 8 backup for database: ${DB_
 # Execute mysqldump with single transaction to avoid locking tables
 mysqldump --defaults-extra-file="${MYSQL_CNF}" \
     --single-transaction \
+    --no-tablespaces \
     --quick \
     --routines \
     --triggers \

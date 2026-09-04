@@ -78,7 +78,7 @@ class Operations extends Migration
             'webhook_id' => ['type' => 'INTEGER', 'constraint' => 11, 'null' => true],
             'event'      => ['type' => 'VARCHAR', 'constraint' => 48],
             'payload'    => ['type' => 'TEXT', 'null' => true],
-            'signature'  => ['type' => 'VARCHAR', 'constraint' => 64, 'null' => true],
+            'signature'  => ['type' => 'VARCHAR', 'constraint' => 128, 'null' => true],
             'status'     => ['type' => 'VARCHAR', 'constraint' => 16, 'default' => 'queued'],
             'attempts'   => ['type' => 'INTEGER', 'constraint' => 4, 'default' => 0],
             'created_at' => ['type' => 'DATETIME'],

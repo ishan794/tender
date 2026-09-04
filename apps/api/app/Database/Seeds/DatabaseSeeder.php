@@ -15,7 +15,7 @@ class DatabaseSeeder extends Seeder
         $db = $this->db;
 
         $truncateTables = [
-            'factories','password_resets','email_verifications','debarred_suppliers','addenda','alert_profiles',
+            'password_resets','email_verifications','debarred_suppliers','addenda','alert_profiles',
             'api_keys','auction_lots','bid_seals','bids','clarifications','coi_declarations','complaints',
             'contract_invoices','contract_milestones','contract_variations','contracts','data_requests',
             'doc_purchases','document_assets','document_downloads','document_versions','eval_criteria',
@@ -26,8 +26,16 @@ class DatabaseSeeder extends Seeder
             'users','webhook_deliveries','webhooks','organisations','districts','provinces'
         ];
 
+        if ($db->DBDriver === 'MySQLi') {
+            $db->query('SET FOREIGN_KEY_CHECKS = 0');
+        }
         foreach ($truncateTables as $t) {
-            $db->table($t)->truncate();
+            if ($db->tableExists($t)) {
+                $db->table($t)->truncate();
+            }
+        }
+        if ($db->DBDriver === 'MySQLi') {
+            $db->query('SET FOREIGN_KEY_CHECKS = 1');
         }
         // Ids shift on every re-seed and that silently repointed saved profiles
         // at the wrong category. Profiles match on slugs now, and we reset the
